@@ -1,0 +1,213 @@
+8086/87/88/186 MACRO ASSEMBLER    INTER                                                    20:10:39  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE INTER
+OBJECT MODULE PLACED IN INTER.OBJ
+ASSEMBLER INVOKED BY:  C:\5XTOOLS\ASM86.EXE INTER.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1         NAME INTER
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                     INTER                                  ;
+                             6     ;                         RoboTrike Interrupt Functions                      ;
+                             7     ;                                   EE/CS 51                                 ;
+                             8     ;                                                                            ;
+                             9     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                            10     
+                            11     ; Description:       This program includes the routines for the RoboTrike
+                            12     ;                    interrupt. The public functions included are:
+                            13     ;                        ClrIRQVectors        - clears the interrupt vector
+                            14     ;                                               table
+                            15     ;                        IllegalEventHandler  - handles any illegal activity
+                            16     ;
+                            17     ; Revision History:
+                            18     ;     11/17/15  Nancy Cao         initial revision
+                            19     
+                            20     ; local include files
+                            21 +1  $INCLUDE(INTER.INC)        ; display constants for interrupts
+                      =1    22     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    23     ;                                                                            ;
+                      =1    24     ;                                  INTER.INC                                 ;
+                      =1    25     ;                            Interrupt Definitions                           ;
+                      =1    26     ;                                Include File                                ;
+                      =1    27     ;                                                                            ;
+                      =1    28     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    29     
+                      =1    30     ; This file contains the definitions for the interrupt functions.
+                      =1    31     ;
+                      =1    32     ; Revision History:
+                      =1    33     ;     11/17/15   Nancy Cao      initial revisions and comments
+                      =1    34     
+                      =1    35     ; General Definitions
+                      =1    36     
+  0001                =1    37     FIRST_RESERVED_VEC      EQU     1               ;reserve vectors 1-3
+  0003                =1    38     LAST_RESERVED_VEC       EQU     3
+  0100                =1    39     NUM_IRQ_VECTORS     EQU     256         ;number of interrupt vectors
+  0004                =1    40     VECTOR_SIZE         EQU 4               ; the size of a vector
+  0002                =1    41     BYTE_SIZE           EQU 2               ; the size of a byte
+  0100                =1    42     TOTAL_VECTOR_NUM    EQU 256             ; the number of vectors to initialize
+                      =1    43     
+                      =1    44     ; Addresses
+                      =1    45     
+                      =1    46     ; Register Values
+                      =1    47     
+  FF22                =1    48     INTCtrlrEOI     EQU     0FF22H          ;address of interrupt controller EOI register
+  8000                =1    49     NonSpecEOI      EQU     08000H          ;Non-specific EOI command
+                            50     
+8086/87/88/186 MACRO ASSEMBLER    INTER                                                    20:10:39  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                            51     CGROUP  GROUP   CODE
+                            52     
+----                        53     CODE    SEGMENT PUBLIC 'CODE'
+                            54     
+                            55     
+                            56             ASSUME  CS:CGROUP
+                            57     
+                            58     ; ClrIRQVectors
+                            59     ;
+                            60     ; Description:      This functions installs the IllegalEventHandler for all
+                            61     ;                   interrupt vectors in the interrupt vector table.  Note
+                            62     ;                   that TOTAL_VECTOR_NUM are initialized so the code must be
+                            63     ;                   located above 400H.  The initialization skips  (does not
+                            64     ;                   initialize vectors) from vectors FIRST_RESERVED_VEC to
+                            65     ;                   LAST_RESERVED_VEC.
+                            66     ;
+                            67     ; Arguments:        None.
+                            68     ; Return Value:     None.
+                            69     ;
+                            70     ; Local Variables:  CX    - vector counter.
+                            71     ;                   ES:SI - pointer to vector table.
+                            72     ; Shared Variables: None.
+                            73     ; Global Variables: None.
+                            74     ;
+                            75     ; Input:            None.
+                            76     ; Output:           None.
+                            77     ;
+                            78     ; Error Handling:   None.
+                            79     ;
+                            80     ; Algorithms:       None.
+                            81     ; Data Structures:  None.
+                            82     ;
+                            83     ; Registers Used:   flags, AX, CX, SI, ES
+                            84     ;
+                            85     ; Author:            Nancy Cao
+                            86     ; Revision History:
+                            87     ;     11/01/15  Nancy Cao   initial revision and comments
+                            88     ;     11/05/15  Nancy Cao   updated comments
+                            89     ;     11/12/15  Nancy Cao   updated comments
+                            90     
+0000                        91     ClrIRQVectors   PROC    NEAR
+                            92                     PUBLIC  ClrIRQVectors
+                            93     
+                            94     
+0000                        95     InitClrVectorLoop:              ;setup to store the same handler 256 times
+                            96     
+0000 33C0                   97             XOR     AX, AX          ;clear ES (interrupt vectors are in segment 0)
+0002 8EC0                   98             MOV     ES, AX
+0004 BE0000                 99             MOV     SI, 0           ;initialize SI to skip RESERVED_VECS (VECTOR_SIZE byt
+                                   es each)
+                           100     
+0007 B90001                101             MOV     CX, TOTAL_VECTOR_NUM    ;up to TOTAL_VECTOR_NUM to initialize
+                           102     
+                           103     
+000A                       104     ClrVectorLoop:                  ;loop clearing each vector
+8086/87/88/186 MACRO ASSEMBLER    INTER                                                    20:10:39  01/07/;6  PAGE    3
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           105                                     ;check if should store the vector
+000A 83FE04                106             CMP SI, VECTOR_SIZE * FIRST_RESERVED_VEC
+000D 7205                  107             JB      DoStore         ;if before start of reserved field - store it
+000F 83FE0C                108             CMP     SI, VECTOR_SIZE * LAST_RESERVED_VEC
+0012 760B                  109             JBE     DoneStore       ;if in the reserved vectors - don't store it
+                           110             ;JA     DoStore         ;otherwise past them - so do the store
+                           111     
+0014                       112     DoStore:                        ;store the vector
+0014 26C7042500     R      113             MOV     ES: WORD PTR [SI], OFFSET(IllegalEventHandler)
+0019 26C74402----   R      114             MOV     ES: WORD PTR [SI + BYTE_SIZE], SEG(IllegalEventHandler)
+                           115     
+001F                       116     DoneStore:                      ;done storing the vector
+001F 83C604                117             ADD     SI, VECTOR_SIZE     ;update pointer to next vector
+                           118     
+0022 E2E6                  119             LOOP    ClrVectorLoop   ;loop until have cleared all vectors
+                           120             ;JMP    EndClrIRQVectors;and all done
+                           121     
+                           122     
+0024                       123     EndClrIRQVectors:               ;all done, return
+0024 C3                    124             RET
+                           125     
+                           126     
+                           127     ClrIRQVectors   ENDP
+                           128     
+                           129     
+                           130     
+                           131     
+                           132     ; IllegalEventHandler
+                           133     ;
+                           134     ; Description:       This procedure is the event handler for illegal
+                           135     ;                    (uninitialized) interrupts.  It does nothing - it just
+                           136     ;                    returns after sending a non-specific EOI.
+                           137     ;
+                           138     ; Operation:         Send a non-specific EOI and return.
+                           139     ;
+                           140     ; Arguments:         None.
+                           141     ; Return Value:      None.
+                           142     ;
+                           143     ; Local Variables:   None.
+                           144     ; Shared Variables:  None.
+                           145     ; Global Variables:  None.
+                           146     ;
+                           147     ; Input:             None.
+                           148     ; Output:            EOI.
+                           149     ;
+                           150     ; Error Handling:    None.
+                           151     ;
+                           152     ; Algorithms:        None.
+                           153     ; Data Structures:   None.
+                           154     ;
+                           155     ; Registers Changed: None
+                           156     ;
+                           157     ; Author:            Nancy Cao
+                           158     ; Revision History:
+                           159     ;     11/01/15  Nancy Cao   initial revision and comments
+8086/87/88/186 MACRO ASSEMBLER    INTER                                                    20:10:39  01/07/;6  PAGE    4
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           160     ;     11/05/15  Nancy Cao   updated comments
+                           161     ;     11/12/15  Nancy Cao   updated comments
+                           162     
+0025                       163     IllegalEventHandler     PROC    NEAR
+                           164                             PUBLIC  IllegalEventHandler
+                           165     
+0025 90                    166             NOP                             ;do nothing (can set breakpoint here)
+                           167     
+0026 50                    168             PUSH    AX                      ;save the registers
+0027 52                    169             PUSH    DX
+                           170     
+0028 BA22FF                171             MOV     DX, INTCtrlrEOI         ;send a non-specific EOI to the
+002B B80080                172             MOV     AX, NonSpecEOI          ;   interrupt controller to clear out
+002E EE                    173             OUT     DX, AL                  ;   the interrupt that got us here
+                           174     
+002F 5A                    175             POP     DX                      ;restore the registers
+0030 58                    176             POP     AX
+                           177     
+0031 CF                    178             IRET                            ;and return
+                           179     
+                           180     
+                           181     IllegalEventHandler     ENDP
+                           182     
+----                       183     CODE ENDS
+                           184     
+                           185     END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND
