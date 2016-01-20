@@ -1,0 +1,111 @@
+8086/87/88/186 MACRO ASSEMBLER    PPORT                                                    20:25:05  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE PPORT
+OBJECT MODULE PLACED IN PPORT.OBJ
+ASSEMBLER INVOKED BY:  C:\UTIL\ASM86.EXE PPORT.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1     NAME    PPORT
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                    PPORT                                   ;
+                             6     ;                      RoboTrike Parallel Port Functions                     ;
+                             7     ;                                   EE/CS 51                                 ;
+                             8     ;                                                                            ;
+                             9     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                            10     
+                            11     ; Description:       This program includes the routines for the RoboTrike
+                            12     ;                    parallel port. The public functions included are:
+                            13     ;                        InitPP            - initializes the paralllel port
+                            14     ;
+                            15     ; Revision History:
+                            16     ;     11/17/15  Nancy Cao         initial code and comments
+                            17     
+                            18     ; local include files
+                            19 +1  $INCLUDE(PPORT.INC)        ; display constants for timers
+                      =1    20     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    21     ;                                                                            ;
+                      =1    22     ;                                  PPORT.INC                                 ;
+                      =1    23     ;                         Parallel Port Definitions                          ;
+                      =1    24     ;                                 Include File                               ;
+                      =1    25     ;                                                                            ;
+                      =1    26     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    27     
+                      =1    28     ; This file contains the definitions for the parallel port functions.
+                      =1    29     ;
+                      =1    30     ; Revision History:
+                      =1    31     ;     11/17/15   Nancy Cao      initial code and comments
+                      =1    32     
+                      =1    33     ; Addresses
+  0180                =1    34     ParallelPort          EQU     180H      ;address of the parallel port
+                      =1    35     
+                      =1    36     ; Control Register Values
+  0080                =1    37     ParallelVal           EQU     10000000B ; control val to write to parallel port
+                      =1    38     
+                      =1    39     ; Other constants
+  0003                =1    40     PortOffset            EQU     3H       ; offset from the parallel port address
+                            41     
+                            42     
+                            43     CGROUP  GROUP   CODE
+                            44     
+                            45     
+----                        46     CODE    SEGMENT PUBLIC 'CODE'
+                            47     
+                            48     
+                            49             ASSUME  CS:CGROUP
+                            50     
+8086/87/88/186 MACRO ASSEMBLER    PPORT                                                    20:25:05  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                            51     ; InitPP
+                            52     ;
+                            53     ; Description:       Initialize the parallel port.
+                            54     ;
+                            55     ; Operation:         Write the control value to the parallel port.
+                            56     ;
+                            57     ; Arguments:         None.
+                            58     ; Return Value:      None.
+                            59     ;
+                            60     ; Local Variables:   None.
+                            61     ; Shared Variables:  None.
+                            62     ; Global Variables:  None.
+                            63     ;
+                            64     ; Input:             None.
+                            65     ; Output:            Control value.
+                            66     ;
+                            67     ; Error Handling:    None.
+                            68     ;
+                            69     ; Algorithms:        None.
+                            70     ; Data Structures:   None.
+                            71     ;
+                            72     ; Registers Changed: AX, DX
+                            73     ;
+                            74     ; Author:            Nancy Cao
+                            75     ; Revision History:
+                            76     ;     11/17/2015     Nancy Cao        initial code and comments
+                            77     
+0000                        78     InitPP  PROC    NEAR
+                            79             PUBLIC  InitPP
+                            80     
+0000 BA8001                 81             MOV     DX, ParallelPort    ; setup to write to parallel port
+0003 83C203                 82             ADD     DX, PortOffset      ; the offset 
+0006 B080                   83             MOV     AL, ParallelVal      ; to write ControlVal to ParallelPort  
+0008 EE                     84             OUT     DX, AL              ; write ControlVal to ParallelPort
+                            85     
+0009 C3                     86             RET                         ;done so return
+                            87     
+                            88     
+                            89     InitPP  ENDP
+                            90     
+                            91     
+----                        92     CODE ENDS
+                            93     
+                            94     END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND

@@ -1,0 +1,748 @@
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE MOTOR
+OBJECT MODULE PLACED IN MOTOR.OBJ
+ASSEMBLER INVOKED BY:  C:\UTIL\ASM86.EXE MOTOR.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1     NAME    MOTOR
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                     MOTOR                                  ;
+                             6     ;                          RoboTrike Motor Functions                         ;
+                             7     ;                                   EE/CS 51                                 ;
+                             8     ;                                                                            ;
+                             9     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                            10     
+                            11     ; Description:       This program includes the routines for the RoboTrike
+                            12     ;                    keypad. The public functions included are:
+                            13     ;                        SetMotorSpeed     - sets the speed of the RoboTrike,
+                            14     ;                                            including the speeds of the 3
+                            15     ;                                            wheels, as well as the angle
+                            16     ;                                            of the RoboTrike, including the
+                            17     ;                                            anges of the 3 wheels
+                            18     ;                        GetMotorSpeed     - returns RoboTrike's current
+                            19     ;                                            movement speed
+                            20     ;                        GetMotorDirection - returns RoboTrike's current
+                            21     ;                                            direction/angle
+                            22     ;                        SetLaser          - sets the status of the laser
+                            23     ;                                            (on or off)
+                            24     ;                        GetLaser          - gets the status of the laser
+                            25     ;                                            (on or off)
+                            26     ;                        MotorEventHandler - turns the motors on or off
+                            27     ;                                            depending on the pulse width
+                            28     ;
+                            29     ; Revision History:
+                            30     ;     11/11/15  Nancy Cao          initial comments and pseudocode
+                            31     ;     11/15/15  Nancy Cao          initial code, added pulse counters and tables
+                            32     ;     11/15/15  Nancy Cao          updated comments
+                            33     ;     11/16/15  Nancy Cao          finished coding SetMotorSpeed and
+                            34     ;                                  MotorEventHandler
+                            35     ;     11/18/15  Nancy Cao          updated comments and fixed bugs in updating
+                            36     ;                                  motor speeds
+                            37     ;     12/28/15  Nancy Cao          added empty SetTurretAngle,
+                            38     ;                                  SetRelTurretAngle and SetTurretElevation
+                            39     ;                                  functions for the parser
+                            40     
+                            41     ; local include files
+                            42 +1  $INCLUDE(MOTOR.INC)     ; motor constants used in motor functions
+                      =1    43     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    44     ;                                                                            ;
+                      =1    45     ;                                  MOTOR.INC                                 ;
+                      =1    46     ;                              MOTOR  Definitions                            ;
+                      =1    47     ;                                 Include File                               ;
+                      =1    48     ;                                                                            ;
+                      =1    49     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    50     
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                      =1    51     ; This file contains the definitions for the motor functions.
+                      =1    52     ;
+                      =1    53     
+                      =1    54     ; Addresses
+                      =1    55     
+  0181                =1    56     PORTB                  EQU 181H      ; address of Port B
+                      =1    57     
+                      =1    58     ; General definitions
+                      =1    59     
+  0003                =1    60     NUM_WHEELS             EQU 3         ; the number of wheels on the RoboTrike
+  0000                =1    61     MIN_SPEED              EQU 0         ; the speed of the RoboTrike at rest
+  FFFE                =1    62     MAX_SPEED              EQU 65534     ; the fastest the RoboTrike can travel
+  0000                =1    63     MIN_DEGREE             EQU 0         ; the default direction of the RoboTrike
+  0168                =1    64     MAX_DEGREE             EQU 360       ; the max directional degree turn
+  0000                =1    65     FORWARD                EQU 0         ; flag for wheel moving forward
+  0001                =1    66     BACKWARD               EQU 1         ; flag for wheel moving backwards
+  FFFF                =1    67     IGNORE_SPEED           EQU 65535     ; current speed shouldn't change
+ -8000                =1    68     IGNORE_DEGREE          EQU -32768    ; current degree shouldn't change
+  0000                =1    69     LASER_OFF              EQU 0         ; indication that laser is off
+  0080                =1    70     LASER_ON               EQU 10000000B ; flag for Laser On
+  0080                =1    71     PULSE_WIDTH            EQU 128       ; the pulse width of the timer
+  0000                =1    72     INIT_INDEX             EQU 0         ; the initial index when looping arrays
+                            73     
+                            74     EXTRN Sin_Table:WORD    ; a table of decimal values of sin(angles)
+                            75     EXTRN Cos_Table:WORD    ; a table of decimal values of cos(angles)
+                            76     EXTRN Forcex_Table:WORD ; a table of the x-force vectors of the wheels
+                            77     EXTRN Forcey_Table:WORD ; a table of the y-force vectors of the wheels
+                            78     EXTRN Back_Table:BYTE   ; a table of flags to make the wheels go backwards
+                            79     EXTRN Motor_On:BYTE     ; a table of flags to make the wheels turn on
+                            80     
+                            81     CGROUP  GROUP   CODE
+                            82     DGROUP  GROUP   DATA
+                            83     
+----                        84     CODE    SEGMENT PUBLIC 'CODE'
+                            85     
+                            86     
+                            87             ASSUME  CS:CGROUP, DS:DGROUP
+                            88     
+                            89     ; InitMotor
+                            90     ; 
+                            91     ; Description: This function initializes speedRobo to REST_SPEED, angleRobo to
+                            92     ;              DEFAULT_DEGREE, the elements of speedWheels to REST_SPEED, and
+                            93     ;              the elements of dirWheels to FORWARD. The elements of
+                            94     ;              pulseCounter is set to the PULSE_WIDTH.
+                            95     ;
+                            96     ; Operation:   The function sets the initial speed/angle of the RoboTrike to
+                            97     ;              be REST_SPEED AND DEFAULT_DEGREE, since it is not moving nor is
+                            98     ;              it moving in any direction by default. The speed of the
+                            99     ;              wheels are also set to REST_SPEED. The direction of the wheels
+                           100     ;              are set to be FORWARD. The pulseCounters are set to PULSE_WIDTH.
+                           101     ;
+                           102     ; Arguments:        None.
+                           103     ; Return Value:     None.
+                           104     ; Local Variables:  None.
+                           105     ; Shared Variables: speedRobo     - speed of the RoboTrike (w)
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    3
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           106     ;                   angleRobo     - direction of the RoboTrike's movement (w)
+                           107     ;                   laserStatus   - laser is either off (set to LASER_OFF) or
+                           108     ;                                   on (set to LASER_ON) (w)
+                           109     ;                   speedWheels   - keeps track of the speed for the 3 wheels
+                           110     ;                                   on the RoboTrike (w)
+                           111     ;                   dirWheels     - keeps track of the direction of the 3 wheels
+                           112     ;                                   on the RoboTrike (w)
+                           113     ;                   pulseCounter  - keeps track of the pulse counters on all
+                           114     ;                                   3 wheels to turn them on and off (w)
+                           115     ; Global Variables: None.
+                           116     ;
+                           117     ; Input:  None.
+                           118     ; Output: None.
+                           119     ;
+                           120     ; Error Handling: None.
+                           121     ;
+                           122     ; Limitations: The speed taken in can only be between MIN_SPEED and MAX_SPEED.
+                           123     ;              The angle taken in can only be between MIN_DEGREE and
+                           124     ;              MAX_DEGREE.
+                           125     ;
+                           126     ; Algorithms: None.
+                           127     ; Data Structures: Arrays (speedWheels, angleWheels).
+                           128     ;
+                           129     ; Registers Changed: BX.
+                           130     ;
+                           131     ; Author: Nancy Cao
+                           132     ; Revision History: 
+                           133     ;     11/11/15  Nancy Cao        initial comments and pseudocode
+                           134     ;     11/15/15  Nancy Cao        initial code and updated comments
+                           135     
+0000                       136     InitMotor    PROC        NEAR
+                           137                  PUBLIC      InitMotor
+                           138     
+0000 53                    139         PUSH BX                           ; save register value to stack
+                           140     
+0001 C70600000000   R      141         MOV speedRobo, MIN_SPEED          ; initial speed of RoboTrike is MIN_SPEED
+0007 C70602000000   R      142         MOV angleRobo, MIN_DEGREE         ; initial direction is MIN_DEGREE
+000D C70604000000   R      143         MOV laserStatus, LASER_OFF        ; initial laser status is off
+0013 C60610008090   R      144         MOV pulseCounter, PULSE_WIDTH     ; set pulse counter to PULSE_WIDTH
+0019 BB0000                145         MOV BX, INIT_INDEX                ; set initial index
+                           146     
+001C                       147     InitArrays:                           ; set speed of wheels to MIN_SPEED and
+001C 83FB03                148         CMP BX, NUM_WHEELS                ; set angle of wheels to MIN_DEGREE            
+                                                     
+001F 7411                  149         JZ  FinishInit                    ; finished setting speed/angle of wheels
+0021 7500                  150         JNZ InitElement                   ; continue setting speed/angle of wheels
+                           151     
+0023                       152     InitElement:                          ; initialize elements of speed/angleWheels
+0023 C6870A000090   R      153         MOV speedWheels[BX], MIN_SPEED    ; set current wheel's speed to MIN_SPEED
+0029 C6870D000090   R      154         MOV dirWheels[BX], FORWARD        ; set current wheel's direction to FORWARD
+002F 43                    155         INC BX                            ; go to the next element in the arrays
+0030 EBEA                  156         JMP InitArrays                    ; continue initializing
+                           157         
+0032                       158     FinishInit:                           ; finished setting speed/angle of wheels
+0032 5B                    159         POP BX                            ; return register value
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    4
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0033 C3                    160         RET
+                           161     
+                           162     InitMotor           ENDP
+                           163     
+                           164     ; SetMotorSpeed
+                           165     ; 
+                           166     ; Description: This function takes in two arguments, speed and angle.
+                           167     ;              The function sets the general speed and angle of the RoboTrike
+                           168     ;              to be the values passed in these arguments. It then also
+                           169     ;              calculates the individual speed for the NUM_WHEELS wheels on the
+                           170     ;              RoboTrike as well.
+                           171     ;
+                           172     ; Operation:   The function first looks if speedRobo should be reset to a new
+                           173     ;              value. If the passed in speed is not IGNORE_SPEED, then it sets
+                           174     ;              the new speed value for speedRobo. It then checks if angleRobo
+                           175     ;              should be reset to a new value. If the passed in angle is not
+                           176     ;              IGNORE_DEGREE, then it sets the new angle value for angleRobo.
+                           177     ;              Since the angle passed can be a number not between MIN_DEGREE
+                           178     ;              and MAX_DEGREE, the function mods the angle by MAX_DEGREE to find
+                           179     ;              the smallest representative angle. Then it checks if the angle
+                           180     ;              passed in was negative. If so, it finds the equivalent positive
+                           181     ;              angle by adding MAX_DEGREE to it. Once the angle is positive,
+                           182     ;              the angleRobo is set to that angle. The speeds and directions
+                           183     ;              for individual wheels are then calculated. The calculation is
+                           184     ;              broken up to x and y components of the wheel. The function loops
+                           185     ;              NUM_WHEELS times, each time looking at a particular wheel. For
+                           186     ;              each wheel, it multiplies the x-force of the wheel with
+                           187     ;              speedRobo, and then takes that and multiplies it with
+                           188     ;              cos(angleRobo), to find the x-component of the speed of the
+                           189     ;              wheel. It then multiplies the y-force of the wheel with
+                           190     ;              speedRobo, and then takes that and multiplies it with
+                           191     ;              sin(angleRobo), to find the y-components of the speed of the
+                           192     ;              wheel. The x-component speed and y-component speed are then
+                           193     ;              added together, and the result is stored in the speedWheels
+                           194     ;              array. The speed is also checked for negative or positive. If it
+                           195     ;              is positive, FORWARD is stored in the dirWheels array; otherwise
+                           196     ;              BACKWARD is stored.
+                           197     ;
+                           198     ; Arguments:        speed (AX)   - the speed of the RoboTrike
+                           199     ;                   angle (BX)   - the direction of the RoboTrike's movement
+                           200     ; Return Value:     None.
+                           201     ; Local Variables:  None.
+                           202     ; Shared Variables: speedRobo    - speed of the RoboTrike (w)
+                           203     ;                   angleRobo    - direction of the RoboTrike's movement (w)
+                           204     ;                   speedWheels  - keeps track of the speed for the 3 wheels
+                           205     ;                                  on the RoboTrike (w)
+                           206     ;                   dirWheels    - keeps track of the direction of the 3 wheels
+                           207     ;                                  on the RoboTrike (w)
+                           208     ; Global Variables: None.
+                           209     ;
+                           210     ; Input:  None.
+                           211     ; Output: None.
+                           212     ;
+                           213     ; Error Handling: None.
+                           214     ;
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    5
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           215     ; Limitations: The speed taken in can only be between MIN_SPEED and MAX_SPEED.
+                           216     ;              The angle taken in can only be between MIN_DEGREE and MAX_DEGREE.
+                           217     ;
+                           218     ; Algorithms: Linear velocity formulas.
+                           219     ; Data Structures: Arrays (speedWheels, dirWheels).
+                           220     ;
+                           221     ; Registers Changed: AX, BX, CX, DX.
+                           222     ;
+                           223     ; Author: Nancy Cao
+                           224     ; Revision History: 
+                           225     ;     11/11/15  Nancy Cao        initial comments and pseudocode
+                           226     ;     11/15/15  Nancy Cao        initial code and updated comments
+                           227     ;     11/16/15  Nancy Cao        updated code
+                           228     ;     11/18/15  Nancy Cao        fixed converting angle and saving correct
+                           229     ;                                speeds for wheels
+                           230     
+0034                       231     SetMotorSpeed    PROC        NEAR
+                           232                      PUBLIC      SetMotorSpeed    
+                           233                      
+0034                       234     SetRoboSpeed:
+0034 3DFFFF                235         CMP AX, IGNORE_SPEED               ; check if speed should be ignored
+0037 7403                  236         JZ SetRoboAngle                    ; if speed is ignored value, move on
+                           237         ;JMP SaveSpeed
+                           238         
+0039                       239     SaveSpeed:
+0039 A30000         R      240         MOV speedRobo, AX                  ; otherwise set speed of the RoboTrike
+                           241         ;JMP SetRoboAngle
+                           242         
+003C                       243     SetRoboAngle:
+003C 81FB0080              244         CMP BX, IGNORE_DEGREE              ; check if angle should be ignored
+0040 BE0000                245         MOV SI, INIT_INDEX                 ; start finding speed/dir of first wheel
+0043 7418                  246         JZ SetWheels                       ; if angle is ignored value, move on
+                           247         ;JMP ConvertAngle
+                           248     
+0045                       249     ConvertAngle:                          ; convert angle to be between MIN_DEGREE
+                           250                                            ; and MAX_DEGREE
+0045 8BC3                  251         MOV AX, BX                         ; angle will be the numerator
+0047 BB6801                252         MOV BX, MAX_DEGREE                 ; MAX_DEGREE will the denominator
+004A 99                    253         CWD                                ; convert signed angle word to double for
+                           254                                            ; signed division
+004B F7FB                  255         IDIV BX                            ; angle / MAX_DEGREE
+004D 83FA00                256         CMP DX, 0                          ; remainder which is the angel is in DX
+0050 7C03                  257         JL ConvertNegAngle                 ; if angle is -, must make it +
+0052 EB0590                258         JMP SaveAngle                      ; otherwise go ahead and store the angle
+                           259                                            
+0055                       260     ConvertNegAngle:                      
+0055 81C26801              261         ADD DX, MAX_DEGREE                 ; add full rotation to get equivalent
+                           262                                            ; positive angle
+                           263         ;JMP SaveAngle                     ; store the angle in angleRobo
+                           264         
+0059                       265     SaveAngle:
+0059 89160200       R      266         MOV angleRobo, DX                  ; set the general angle of the RoboTrike
+                           267         ;JMP SetWheels                     ; find speed/dir of wheel
+                           268     
+005D                       269     SetWheels:                             ; calculate speed/direction for every wheel
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    6
+
+
+LOC  OBJ                  LINE     SOURCE
+
+005D 83FE03                270         CMP SI, NUM_WHEELS                 ; check if we calculated all wheels
+0060 746A                  271         JZ  FinishSetWheels                ; if yes we are done
+                           272         ;JNZ SetTrigAngles                  ; otherwise continue
+                           273     
+0062                       274     SetTrigAngles:                         ; find sin(angleRobo) and cos(angleRobo)
+0062 8B1E0200       R      275         MOV BX, angleRobo                  ; angleRobo is the index for table lookup
+0066 D1E3                  276         SHL BX, 1                          ; Cos_Table and Sin_Table are words so
+                           277                                            ; must shift index from byte to word
+0068 2E8B870000     E      278         MOV AX, CS:Cos_Table[BX]           ; hex of cos(angleRobo) in Cos_Table
+006D A30800         R      279         MOV cosAngle, AX                   ; store it in cosAngle for calculations
+                           280         
+0070 2E8B870000     E      281         MOV AX, CS:Sin_Table[BX]           ; hex of sin(angleRobo) in Sin_Table
+0075 A30600         R      282         MOV sinAngle, AX                   ; store it in sinAngle for calculations
+                           283         ;JMP SetCurrentWheel               ; calculate values for current wheel
+                           284         
+0078                       285     SetCurrentWheel:                       ; calculate values for current wheel
+0078 8BDE                  286         MOV BX, SI                         ; current wheel's index
+007A D1E3                  287         SHL BX, 1                          ; shift index since Forcex_Table,
+                           288                                            ; Forcey_Table are words
+                           289                                            
+007C 2E8B870000     E      290         MOV AX, CS:Forcex_Table[BX]        ; x-force vect of current wheel
+0081 D12E0000       R      291         SHR speedRobo, 1                   ; half the speed to ignore sign value
+0085 F72E0000       R      292         IMUL speedRobo                     ; x-force vect * speed
+0089 8BC2                  293         MOV AX, DX                         ; truncate to DX since IMUL returns
+                           294                                            ; DX|AX with word multiplications
+008B F72E0800       R      295         IMUL cosAngle                      ; (x-force vect * speed) * cos(angleRobo)
+008F 8BCA                  296         MOV CX, DX                         ; the x-speed of the wheel, truncated
+                           297                                            ; to DX since IMUL returns DX|AX with
+                           298                                            ; word multiplications
+                           299     
+0091 2E8B870000     E      300         MOV AX, CS:Forcey_Table[BX]        ; y-force vect of current wheel
+0096 F72E0000       R      301         IMUL speedRobo                     ; y-force vect * speed
+009A D1260000       R      302         SHL speedRobo, 1
+009E 8BC2                  303         MOV AX, DX                         ; truncate to DX since IMUL returns
+                           304                                            ; DX|AX with word multiplications
+00A0 F72E0600       R      305         IMUL sinAngle                      ; (y-force vect * speed) * sin(angleRobo)
+                           306         
+00A4 03D1                  307         ADD DX, CX                         ; add x and y components of speed to get
+                           308                                            ; total speed of current wheel
+00A6 C1E202                309         SHL DX, 2                          ; truncate the extra sign bits that
+                           310                                            ; exist due to multiplying twice
+00A9 80FE00                311         CMP DH, 0                          ; check if speed is positive or neg
+00AC 7F02                  312         JG PositiveDirection               ; if positive store FORWARD direction
+00AE 7C0D                  313         JL NegativeDirection               ; otherwise store BACKWARD direction
+                           314         ;JMP CheckDirection
+                           315         
+00B0                       316     PositiveDirection:                     ; set speed and forward direction
+00B0 88B40A00       R      317         MOV speedWheels[SI], DH            ; set speed for current wheel; only
+                           318                                            ; truncate to higher bit of final speed
+                           319                                            ; since lower DL is just junk values
+00B4 C6840D000090   R      320         MOV dirWheels[SI], FORWARD         ; set wheel to go forward
+00BA 46                    321         INC SI                             ; go to next wheel
+00BB EBA0                  322         JMP SetWheels                      ; set values for next wheel
+                           323     
+00BD                       324     NegativeDirection:
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    7
+
+
+LOC  OBJ                  LINE     SOURCE
+
+00BD F6DE                  325         NEG DH                             ; take absolute value of the speed
+00BF 88B40A00       R      326         MOV speedWheels[SI], DH            ; truncate to higher bit of final speed
+                           327                                            ; since lower DL is just junk values
+00C3 C6840D000190   R      328         MOV dirWheels[SI], BACKWARD        ; set wheel to go backward
+00C9 46                    329         INC SI                             ; go to next wheel
+00CA EB91                  330         JMP SetWheels                      ; set values for next wheel
+                           331         
+00CC                       332     FinishSetWheels:
+00CC C3                    333         RET
+                           334     
+                           335     SetMotorSpeed           ENDP
+                           336     
+                           337     ; GetMotorSpeed
+                           338     ; 
+                           339     ; Description: This function returns the current speed setting for the
+                           340     ;              RoboTrike. The value will always be between MIN_SPEED and
+                           341     ;              MAX_SPEED, inclusively. A value of MIN_SPEED returned means the
+                           342     ;              RoboTrike is currently at rest. A value of MAX_SPEED means the
+                           343     ;              RoboTrike is at maximum speed.
+                           344     ;
+                           345     ; Operation:   This function takes the speed set in speedRobo and
+                           346     ;              returns it in AX.
+                           347     ;
+                           348     ; Arguments:        None.
+                           349     ; Return Value:     speed (AX) - the movement speed of the RoboTrike
+                           350     ; Local Variables:  None.
+                           351     ; Shared Variables: speedRobo - the current movement speed of the RoboTrike (r)
+                           352     ; Global Variables: None.
+                           353     ;
+                           354     ; Input: None.
+                           355     ; Output: None.
+                           356     ;
+                           357     ; Error Handling: None.
+                           358     ;
+                           359     ; Limitations: The speed can only be between MIN_SPEED and MAX_SPEED.
+                           360     ;
+                           361     ; Algorithms: None.
+                           362     ; Data Structures: None.
+                           363     ;
+                           364     ; Registers Changed: AX
+                           365     ;
+                           366     ; Author: Nancy Cao
+                           367     ; Revision History:
+                           368     ;     11/11/15  Nancy Cao        initial comments and pseudocode
+                           369     ;     11/15/15  Nancy Cao        initial code and updated comments
+                           370     
+00CD                       371     GetMotorSpeed    PROC        NEAR
+                           372                      PUBLIC      GetMotorSpeed
+                           373     
+00CD A10000         R      374         MOV AX, speedRobo           ; return value of RoboTrike speed in AX
+00D0 C3                    375         RET
+                           376                  
+                           377     GetMotorSpeed    ENDP
+                           378                  
+                           379                  
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    8
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           380     ; GetMotorDirection
+                           381     ; 
+                           382     ; Description: This function returns the current direction setting for the
+                           383     ;              RoboTrike. The value will always be between MIN_DEGREE and
+                           384     ;              MAX_DEGREE, inclusively. A value of MIN_DEGREE returned means the
+                           385     ;              RoboTrike is currently going straight ahead relative to its
+                           386     ;              orientation. Angles are considered clockwise.
+                           387     ;
+                           388     ; Operation:   This function takes the angle set in angleRobo and
+                           389     ;              returns it in AX.
+                           390     ;
+                           391     ; Arguments:        None.
+                           392     ; Return Value:     angle (AX) - the direction of the RoboTrike
+                           393     ; Local Variables:  None.
+                           394     ; Shared Variables: angleRobo - the current direction of the RoboTrike (r)
+                           395     ; Global Variables: None.
+                           396     ;
+                           397     ; Input: None.
+                           398     ; Output: None.
+                           399     ;
+                           400     ; Error Handling: None.
+                           401     ;
+                           402     ; Limitations: The angle can only be between MIN_DEGREE and MAX_DEGREE.
+                           403     ;
+                           404     ; Algorithms: None.
+                           405     ; Data Structures: None.
+                           406     ;
+                           407     ; Registers Changed: AX
+                           408     ;
+                           409     ; Author: Nancy Cao
+                           410     ; Revision History:
+                           411     ;     11/11/15  Nancy Cao        initial comments and pseudocode
+                           412     ;     11/15/15  Nancy Cao        initial code and updated comments
+                           413     
+00D1                       414     GetMotorDirection    PROC        NEAR
+                           415                          PUBLIC      GetMotorDirection
+                           416     
+00D1 A10200         R      417         MOV AX, angleRobo           ; return the direction of the RoboTrike in AX
+00D4 C3                    418         RET
+                           419                  
+                           420     GetMotorDirection    ENDP
+                           421     
+                           422     ; SetLaser
+                           423     ; 
+                           424     ; Description: This function takes in an argument called offon, which
+                           425     ;              stores either LASER_OFF (meaning the laser should be off), or
+                           426     ;              another number (meaning the laser should be on). The function
+                           427     ;              will turn the laser on or off according to what the value of
+                           428     ;              offon is.
+                           429     ;
+                           430     ; Operation:   This function takes in offon, which is either LASER_OFF or
+                           431     ;              another number.. If it is LASER_OFF, the function will turn the
+                           432     ;              laser off, and if it is not LASER_OFF, the function will turn
+                           433     ;              the laser on.
+                           434     ;
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE    9
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           435     ; Arguments:        offon (AX)  - indicates whether laser is off (LASER_OFF) or
+                           436     ;                                 on (!= LASER_OFF)
+                           437     ; Return Value:     None.
+                           438     ; Local Variables:  None.
+                           439     ; Shared Variables: laserStatus - stores LASER_OFF (meaning laser is off) or
+                           440     ;                                 another number (meaning laser is on) (w)
+                           441     ; Global Variables: None.
+                           442     ;
+                           443     ; Input: None.
+                           444     ; Output: Laser is turned on or off.
+                           445     ;
+                           446     ; Error Handling: None.
+                           447     ;
+                           448     ; Limitations: None.
+                           449     ;
+                           450     ; Algorithms: None.
+                           451     ; Data Structures: None.
+                           452     ;
+                           453     ; Registers Changed: None.
+                           454     ;
+                           455     ; Author: Nancy Cao
+                           456     ; Revision History:
+                           457     ;     11/11/15  Nancy Cao        initial comments and pseudocode
+                           458     ;     11/15/15  Nancy Cao        initial code and updated comments
+                           459     
+00D5                       460     SetLaser    PROC        NEAR
+                           461                 PUBLIC      SetLaser
+                           462     
+00D5 A30400         R      463         MOV laserStatus, AX           ; set the status of the laser to be on/off
+                           464     
+00D8 C3                    465         RET
+                           466                  
+                           467     SetLaser    ENDP
+                           468     
+                           469     ; GetLaser
+                           470     ; 
+                           471     ; Description: This function takes no arguments, and returns either LASER_OFF or
+                           472     ;              not LASER_OFF, depending on what is stored in laserStatus. If
+                           473     ;              LASER_OFF is stored, the laser is turned off, and LASER_OFF will
+                           474     ;              be returned. Otherwise, another number that is not LASER_OFF is
+                           475     ;              stored, which means the laser is on. This number is returned
+                           476     ;              instead.
+                           477     ;
+                           478     ; Operation:   This function looks at the value of laserStatus. If it
+                           479     ;              is LASER_OFF, the laser is off, and the function will return
+                           480     ;              LASER_OFF. If it is not, the laser is on, and the function will
+                           481     ;              return that number instead.
+                           482     ;
+                           483     ; Arguments:        None
+                           484     ; Return Value:     status (AX) - indicates laser is off (LASER_OFF) or
+                           485     ;                                 on (!= LASER_OFF)
+                           486     ; Local Variables:  None.
+                           487     ; Shared Variables: laserStatus - stores LASER_OFF (meaning laser is off)
+                           488     ;                                 or another number (meaning laser is on) (r)
+                           489     ; Global Variables: None.
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE   10
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           490     ;
+                           491     ; Input: None.
+                           492     ; Output: None.
+                           493     ;
+                           494     ; Error Handling: None.
+                           495     ;
+                           496     ; Limitations: None.
+                           497     ;
+                           498     ; Algorithms: None.
+                           499     ; Data Structures: None.
+                           500     ;
+                           501     ; Registers Changed: AX
+                           502     ;
+                           503     ; Author: Nancy Cao
+                           504     ; Revision History:
+                           505     ;     11/11/15  Nancy Cao        initial comments and pseudocode
+                           506     ;     11/15/15  Nancy Cao        initial code and updated comments
+                           507     
+00D9                       508     GetLaser    PROC        NEAR
+                           509                 PUBLIC      GetLaser
+                           510     
+00D9 A10400         R      511         MOV AX, laserStatus           ; return the status of the laser
+00DC C3                    512         RET
+                           513                  
+                           514     GetLaser    ENDP
+                           515     
+                           516     
+                           517     ; MotorEventHandler
+                           518     ; 
+                           519     ; Description: This function uses timer interrupts to output to the motors.
+                           520     ;              A pulse width counter is kept to figure out when to turn
+                           521     ;              certain wheels on and off. The function looks at the speed and
+                           522     ;              direction of every wheel to figure out whether to flag bits
+                           523     ;              to turn a wheel clockwise/counterclockwise, whether they should
+                           524     ;              be on or off, and whether the laser should be on or off.
+                           525     ;
+                           526     ; Operation:   This function first decrements the pulse counter. If the
+                           527     ;              pulse counter reaches 0, the pulse counter is reset. Otherwise,
+                           528     ;              the function loops through NUM_WHEELS time to look at each wheel.
+                           529     ;              For each wheel, its direction is first examined. If its direction
+                           530     ;              is FORWARD, the bit corresponding to the direction of that wheel
+                           531     ;              is not set. If its direction is BACKWARD, the bit corresponding
+                           532     ;              to to the direction of that wheel is set. Then it looks at its
+                           533     ;              speed and compares it to the pulse counter. As long as the speed
+                           534     ;              is higher than the pulse counter, the wheel should stay on, and
+                           535     ;              the bit corresponding to that is set. Otherwise it is not set.
+                           536     ;              After all the wheels have been gone through, the function checks
+                           537     ;              if the laser status equals LASER_OFF. If not, the laser is on,
+                           538     ;              and the bit corresponding to the laser is set.
+                           539     ;              Here are the bits corresponding to different commands:
+                           540     ;              00000001 - sets reverse for wheel 1
+                           541     ;              00000010 - turns on wheel 1
+                           542     ;              00000100 - sets reverse for wheel 2
+                           543     ;              00001000 - turns on wheel 2
+                           544     ;              00010000 - sets reverse for wheel 3
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE   11
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           545     ;              00100000 - turns on wheel 3
+                           546     ;              10000000 - sets laser on
+                           547     ;
+                           548     ; Arguments:        None
+                           549     ; Return Value:     None.
+                           550     ; Local Variables:  None.
+                           551     ; Shared Variables: pulseCounter - (w)
+                           552     ; Global Variables: None.
+                           553     ;
+                           554     ; Input: None.
+                           555     ; Output: 8-bit of commands for the motors.
+                           556     ;
+                           557     ; Error Handling: None.
+                           558     ;
+                           559     ; Limitations: None.
+                           560     ;
+                           561     ; Algorithms: None.
+                           562     ; Data Structures: None.
+                           563     ;
+                           564     ; Registers Changed: AX
+                           565     ;
+                           566     ; Author: Nancy Cao
+                           567     ; Revision History:
+                           568     ;     11/16/15  Nancy Cao        initial code and comments
+                           569     
+00DD                       570     MotorEventHandler   PROC        NEAR
+                           571                         PUBLIC      MotorEventHandler
+                           572                    
+00DD BB0000                573         MOV BX, INIT_INDEX           ; the index of the first wheel
+00E0 B000                  574         MOV AL, 0                    ; output depends on direction, pulse and laser
+                           575         ;JMP StartPulsing
+                           576                    
+00E2                       577     StartPulsing:
+00E2 FE0E1000       R      578         DEC pulseCounter             ; lower counter of pulsing by 1
+00E6 783C                  579         JS  ResetPulseCounter        ; if the counter reaches 0 reset it
+                           580         ;JNS NextPulse               ; otherwise figure out flags to output to PORTB
+                           581     
+00E8                       582     NextPulse:
+00E8 83FB03                583         CMP BX, NUM_WHEELS
+00EB 7427                  584         JZ CheckLaser                ; check to see if laser should be on or off
+00ED 8A8F0A00       R      585         MOV CL, speedWheels[BX]      ; the absolute speed of the wheel
+00F1 80BF0D0001     R      586         CMP dirWheels[BX], BACKWARD  ; check if current wheel is going backwards
+00F6 7402                  587         JZ FlagBackwards             ; if direction is BACKWARD need to flag wheel
+                           588                                      ; going backwards
+00F8 7507                  589         JNZ  FlagOn                  ; otherwise skip to flagging if wheel should be
+                           590                                      ; on or off
+                           591         
+00FA                       592     FlagBackwards:
+00FA 2E8A970000     E      593         MOV DL, CS:Back_Table[BX]    ; backwards flag for current wheel
+00FF 0AC2                  594         OR AL, DL                    ; add flag to output bits
+                           595         ;JMP FlagOn                  ; must also flag wheel to be on/off
+                           596     
+0101                       597     FlagOn:
+0101 3A0E1000       R      598         CMP CL, pulseCounter         ; if speed is higher than pulse counter, turn
+                           599                                      ; wheel on; otherwise turn it off
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE   12
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0105 7F03                  600         JG TurnOn                    ; speed is higher, so turn on wheel
+0107 43                    601         INC BX                       ; go to next wheel
+0108 EBDE                  602         JMP NextPulse                ; flag bits for next wheel
+                           603     
+010A                       604     TurnOn:
+010A 2E8A970000     E      605         MOV DL, CS:Motor_On[BX]      ; flag to turn on current wheel
+010F 0AC2                  606         OR AL, DL                    ; add flag to output bits
+0111 43                    607         INC BX                       ; go to next wheel
+0112 EBD4                  608         JMP NextPulse                ; flag bits for next wheel
+                           609         
+0114                       610     CheckLaser:
+0114 833E040000     R      611         CMP laserStatus, LASER_OFF   ; check if laser is off
+0119 7402                  612         JZ FinishOutput              ; if laser is off we are done
+                           613         ;JNZ TurnLaserOn             ; if laser is on flag to turn on laser
+                           614         
+011B                       615     TurnLaserOn:
+011B 0C80                  616         OR AL, LASER_ON              ; add flag to output bits
+                           617         ;JMP FinishOutput            ; send flags to PORTB
+                           618      
+011D                       619     FinishOutput:
+011D BA8101                620         MOV DX, PORTB                ; port address B
+0120 EE                    621         OUT DX, AL                   ; send flags to PORTB
+0121 EB0790                622         JMP FinishedPulsing          
+                           623         
+0124                       624     ResetPulseCounter:
+0124 C60610008090   R      625         MOV pulseCounter, PULSE_WIDTH; reset the pulse counter
+                           626         ;JMP FinishedPulsing
+                           627     
+012A                       628     FinishedPulsing:
+012A C3                    629         RET
+                           630                    
+                           631     MotorEventHandler    ENDP               
+                           632     
+                           633     ; optional functions not implemented
+                           634     
+012B                       635     SetTurretAngle      PROC        NEAR
+                           636                         PUBLIC      SetTurretAngle
+012B 90                    637             NOP
+012C C3                    638             RET
+                           639     SetTurretAngle      ENDP
+                           640     
+012D                       641     SetRelTurretAngle   PROC        NEAR
+                           642                         PUBLIC      SetRelTurretAngle
+012D 90                    643             NOP
+012E C3                    644             RET
+                           645     SetRelTurretAngle   ENDP
+                           646     
+012F                       647     SetTurretElevation  PROC        NEAR
+                           648                         PUBLIC      SetTurretElevation
+012F 90                    649             NOP
+0130 C3                    650             RET
+                           651     SetTurretElevation  ENDP
+                           652     
+                           653                    
+----                       654     CODE ENDS    
+8086/87/88/186 MACRO ASSEMBLER    MOTOR                                                    20:25:08  01/07/;6  PAGE   13
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           655                
+                           656     ;the data segment
+                           657     
+----                       658     DATA    SEGMENT PUBLIC  'DATA'
+                           659     
+0000 ????                  660     speedRobo       DW     ?              ; the speed of the entire RoboTrike
+0002 ????                  661     angleRobo       DW     ?              ; the angle of the entire RoboTrike
+0004 ????                  662     laserStatus     DW     ?              ; laser is off (LASER_OFF) or on (other #)
+0006 ????                  663     sinAngle        DW     ?              ; sin(angleRobo)
+0008 ????                  664     cosAngle        DW     ?              ; cos(angleRobo)
+000A (3                    665     speedWheels     DB NUM_WHEELS DUP (?) ; NUM_WHEELS speed values for wheels
+     ??
+     )
+000D (3                    666     dirWheels       DB NUM_WHEELS DUP (?) ; DEFAULT_DIR direction values for wheels
+     ??
+     )
+0010 ??                    667     pulseCounter    DB     ?              ; counter for the pulse rate of wheels
+                           668     
+----                       669     DATA    ENDS
+                           670     
+                           671     END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND

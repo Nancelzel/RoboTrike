@@ -1,0 +1,69 @@
+8086/87/88/186 MACRO ASSEMBLER    FLAGS                                                    20:25:17  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE FLAGS
+OBJECT MODULE PLACED IN FLAGS.OBJ
+ASSEMBLER INVOKED BY:  C:\UTIL\ASM86.EXE FLAGS.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1             NAME  Flags
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                     Flags                                  ;
+                             6     ;                Tables of flags for the wheels of the RoboTrike             ;
+                             7     ;                                                                            ;
+                             8     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             9     
+                            10     ; This file contains the tables of flags for the wheels of the RoboTrike. These
+                            11     ; flags signify whether to either have the wheels rotate clockwise (forward = 0)
+                            12     ; or counterclockwise (backward = 1), as well as turned on (1) or off (0). The
+                            13     ; lowest 2 bits are for the first wheel; the second lowest 2 bits are for the
+                            14     ; second wheel; and the third lowest 2 bits are for the third wheel. The lower
+                            15     ; of the two bits are flags for whether the wheels should go backwards or not;
+                            16     ; the higher of the two bits are flags for whether the wheels should be on or
+                            17     ; off.
+                            18     ;
+                            19     ; These tables assume the RoboTrike has 3 wheels.
+                            20     ;
+                            21     ; The tables included are:
+                            22     ;       Back_Table - a table of flags for wheels to go backwards
+                            23     ;       Motor_On   - a table of flags for wheels to turn on
+                            24     ;
+                            25     ; Revision History:
+                            26     ;   11/16/15   Nancy Cao      initial code and comments
+                            27     
+                            28     
+                            29     ;setup code group and start the code segment
+                            30     CGROUP  GROUP   CODE
+                            31     
+----                        32     CODE    SEGMENT PUBLIC 'CODE'
+                            33     
+0000                        34     Back_Table      LABEL   BYTE
+                            35                     PUBLIC  Back_Table
+                            36                     
+0000 01                     37             DB      00000001B           ; flags first wheel to go backwards
+0001 04                     38             DB      00000100B           ; flags second wheel to go backwards
+0002 10                     39             DB      00010000B           ; flags third wheel to go backwards
+                            40                     
+0003                        41     Motor_On        LABEL   BYTE
+                            42                     PUBLIC  Motor_On
+                            43     
+0003 02                     44             DB      00000010B           ; flags first wheel to turn on
+0004 08                     45             DB      00001000B           ; flags second wheel to turn on
+0005 20                     46             DB      00100000B           ; flags third wheel to turn on
+                            47             
+----                        48     CODE    ENDS
+                            49     
+                            50     
+8086/87/88/186 MACRO ASSEMBLER    FLAGS                                                    20:25:17  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                            51     
+                            52             END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND

@@ -1,0 +1,93 @@
+8086/87/88/186 MACRO ASSEMBLER    FORCE_VECTORS                                            20:25:15  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE FORCE_VECTORS
+OBJECT MODULE PLACED IN FORCE.OBJ
+ASSEMBLER INVOKED BY:  C:\UTIL\ASM86.EXE FORCE.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1             NAME  Force_Vectors
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                FORCE_VECTORS                               ;
+                             6     ;            Tables of force vectors for the wheels of the RoboTrike         ;
+                             7     ;                                                                            ;
+                             8     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             9     
+                            10     ; This file contains the tables of x-force and y-force vector values for the
+                            11     ; wheels of the RoboTrike in hexadecimal form. The tables assume the RoboTrike
+                            12     ; has 3 wheels.
+                            13     ;
+                            14     ; The tables included are:
+                            15     ;       Forcex_Table - a table of the x-force vectors of the wheels
+                            16     ;       Forcey_Table - a table of the y-force vecotrs of the wheels
+                            17     ;
+                            18     ; Revision History:
+                            19     ;   11/15/15   Nancy Cao      initial code and comments
+                            20     
+                            21     ;setup code group and start the code segment
+                            22     CGROUP  GROUP   CODE
+                            23     
+----                        24     CODE    SEGMENT PUBLIC 'CODE'
+                            25     
+                            26     
+                            27     ; Forcex_Table
+                            28     ;
+                            29     ; Description:      This is the force vector table for the x-direction for the
+                            30     ;                   wheels of the RoboTrike. Values listed are in hex. 
+                            31     ;
+                            32     ; Notes:            Assumed that the RoboTrike has 3 wheels and are oriented 120
+                            33     ;                   degrees around each other.
+                            34     ;
+                            35     ; Author:           Nancy Cao
+                            36     ; Revision History:
+                            37     ;   11/15/15  Nancy Cao    initial table and comments
+                            38     
+0000                        39     Forcex_Table    LABEL   WORD
+                            40                     PUBLIC  Forcex_Table
+                            41     
+                            42     
+                            43     ;       DW      normalized value (hexadecimal)
+                            44                             
+0000 FF7F                   45             DW          07FFFH       ; x-force vector (1) of wheel 1
+0002 00C0                   46             DW          0C000H       ; x-force vector (-1/2) of wheel 2
+0004 00C0                   47             DW          0C000H       ; x-force vector (-1/2) of wheel 3
+                            48     
+                            49     
+                            50     ; Forcey_Table
+8086/87/88/186 MACRO ASSEMBLER    FORCE_VECTORS                                            20:25:15  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                            51     ;
+                            52     ; Description:      This is the force vector table for the y-direction for the
+                            53     ;                   wheels of the RoboTrike. Values listed are in hex. 
+                            54     ;
+                            55     ; Notes:            Assumed that the RoboTrike has 3 wheels and are oriented 120
+                            56     ;                   degrees around each other.
+                            57     ;
+                            58     ; Author:           Nancy Cao
+                            59     ; Revision History:
+                            60     ;   11/15/15  Nancy Cao     initial table and comments
+                            61     
+0006                        62     Forcey_Table    LABEL   WORD
+                            63                     PUBLIC  Forcey_Table
+                            64     
+                            65     
+                            66     ;       DW      normalized value (hexadecimal)  
+                            67     
+0006 0000                   68             DW         0000H        ; y-force vector (0) of wheel 1
+0008 2791                   69             DW         9127H        ; y-force vector (-root3/2) of wheel 2
+000A D96E                   70             DW         6ED9H        ; y-force vector (root3/2) of wheel 3
+                            71            
+----                        72     CODE    ENDS
+                            73     
+                            74     
+                            75     
+                            76             END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND

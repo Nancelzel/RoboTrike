@@ -1,0 +1,2742 @@
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE PARSER
+OBJECT MODULE PLACED IN PARSER.OBJ
+ASSEMBLER INVOKED BY:  C:\UTIL\ASM86.EXE PARSER.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1     NAME    PARSER
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                   PARSER                                   ;
+                             6     ;                          RoboTrike Parser Functions                        ;
+                             7     ;                                  EE/CS 51                                  ;
+                             8     ;                                                                            ;
+                             9     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                            10     
+                            11     ; Description:       This program includes the RoboTrike parser functions.
+                            12     ;                    The public functions included are:
+                            13     ;                        InitSerialChar       - initializes the serial char
+                            14     ;                                               processing
+                            15     ;                        ParseSerialChar      - parses the command from serial
+                            16     ;                    The private functions included are:
+                            17     ;                        GetToken             - gets token type/value of current
+                            18     ;                                               char being parsed
+                            19     ;                        SetCommand           - sets the current command
+                            20     ;                        SetSign              - sets the current sign
+                            21     ;                        AddDigit             - appends a digit to current number
+                            22     ;                        CallCommand          - calls the appropriate function
+                            23     ;                                               depending on current command
+                            24     ;                        ThrowError           - sets the appropriate error that
+                            25     ;                                               was thrown
+                            26     ;                        DoNothing            - do nothing for empty transitions
+                            27     ;                        SetAbsoluteSpeed     - sets the absolute speed of the
+                            28     ;                                               RoboTrike
+                            29     ;                        SetRelativeSpeed     - sets the relative speed of the
+                            30     ;                                               RoboTrike
+                            31     ;                        SetDirection         - sets the direction of the
+                            32     ;                                               RoboTrike
+                            33     ;                        RotateTurretAngle    - rotates the turret
+                            34     ;                        SetTurretElevation   - sets turret elevation
+                            35     ;                        TurnLaserOn          - turns on the laser
+                            36     ;                        TurnLaserOff         - turns off the laser
+                            37     ;                    This code also contains these tables:
+                            38     ;                        JumpTable            - a table of addresses for
+                            39     ;                                               functions that act on the
+                            40     ;                                               RoboTrike
+                            41     ;                        StateTable           - a table of transition states
+                            42     ;                        Token Tables         - a table of tokens and their
+                            43     ;                                               corresponding values
+                            44     ;
+                            45     ; Revision History:
+                            46     ;     11/24/15  Nancy Cao         initial comments and pseudocode
+                            47     ;     12/21/15  Nancy Cao         initial code
+                            48     ;     12/23/15  Nancy Cao         finished coding and updated comments
+                            49     
+                            50     ; local include files
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                            51 +1  $INCLUDE(PARSER.INC)          ;contains constants for the serial parser
+                      =1    52     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    53     ;                                                                            ;
+                      =1    54     ;                                  PARSER.INC                                ;
+                      =1    55     ;                               Parser Definitions                           ;
+                      =1    56     ;                                 Include File                               ;
+                      =1    57     ;                                                                            ;
+                      =1    58     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    59     
+                      =1    60     ; This file contains the definitions for the serial parser functions.
+                      =1    61     ; Revision History:
+                      =1    62     ;      12/21/15  Nancy Cao    initial code and comment
+                      =1    63     ;
+                      =1    64     
+                      =1    65     ; State definitions
+                      =1    66     ;    note that these MUST match the layout of the transition table
+                      =1    67     
+  0000                =1    68     ST_INITIAL      EQU   0   ; initial state
+  0001                =1    69     ST_ABS_SPEED    EQU   1   ; set absolute speed
+  0002                =1    70     ST_REL_SPEED    EQU   2   ; set relative speed
+  0003                =1    71     ST_DIRECTION    EQU   3   ; set direction of movement
+  0004                =1    72     ST_ROTATE       EQU   4   ; rotate turret 
+  0005                =1    73     ST_ELEVATE      EQU   5   ; elevate turret
+  0006                =1    74     ST_LASER_ON     EQU   6   ; fire laser
+  0007                =1    75     ST_LASER_OFF    EQU   7   ; turn laser off
+  0008                =1    76     ST_SIGN         EQU   8   ; set sign of number parsed
+  0009                =1    77     ST_DIGIT        EQU   9   ; append digit
+  000A                =1    78     ST_ERROR        EQU   10  ; error state
+  000B                =1    79     ST_END          EQU   11  ; end state
+                      =1    80     
+                      =1    81     ; Token Type Definitions
+                      =1    82     ;    note that these MUST match the layout of the transition table
+                      =1    83     
+  0000                =1    84     TOKEN_ABS_SPEED EQU   0  ; 'S'
+  0001                =1    85     TOKEN_REL_SPEED EQU   1  ; 'V'
+  0002                =1    86     TOKEN_DIRECTION EQU   2  ; 'D'
+  0003                =1    87     TOKEN_ROTATE    EQU   3  ; 'T'
+  0004                =1    88     TOKEN_ELEVATE   EQU   4  ; 'E'
+  0005                =1    89     TOKEN_LASER_ON  EQU   5  ; 'F'
+  0006                =1    90     TOKEN_LASER_OFF EQU   6  ; 'O'
+  0007                =1    91     TOKEN_SIGN      EQU   7  ; '+' or '-'
+  0008                =1    92     TOKEN_DIGIT     EQU   8  ; '0' to '9'
+  0009                =1    93     TOKEN_RETURN    EQU   9  ; '<RETURN>'
+  000A                =1    94     TOKEN_SPACE     EQU   10 ; ' '
+  000B                =1    95     TOKEN_OTHER     EQU   11 ; other possible tokens
+                      =1    96     
+  000C                =1    97     NUM_TOKEN_TYPES EQU   12 ; number of token types
+                      =1    98     
+                      =1    99     ; Get Token
+  007F                =1   100     TOKEN_MASK          EQU   01111111B     ;mask high bit of token
+                      =1   101     
+                      =1   102     ; Command Definitions
+                      =1   103     
+ -0001                =1   104     NO_COMMAND      EQU   -1
+  0000                =1   105     SET_ABS_SPEED   EQU   0
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    3
+
+
+LOC  OBJ                  LINE     SOURCE
+
+  0001                =1   106     SET_REL_SPEED   EQU   1
+  0002                =1   107     SET_DIRECTION   EQU   2
+  0003                =1   108     ROTATE          EQU   3
+  0004                =1   109     SET_ELEVATION   EQU   4
+  0005                =1   110     SET_LASER_ON    EQU   5
+  0006                =1   111     SET_LASER_OFF   EQU   6
+                      =1   112                       
+                      =1   113     ; general definitions
+                      =1   114     
+  0000                =1   115     NO_ERROR        EQU   0   ; flag for no parser error
+  0001                =1   116     OVERFLOW_ERROR  EQU   1   ; flag for overflow error
+  0002                =1   117     CHAR_ERROR      EQU   2   ; flag for character errors
+                      =1   118     
+  0000                =1   119     UNSIGNED        EQU   0   ; flag for unsign value
+  0001                =1   120     POSITIVE        EQU   1   ; flag for positive
+ -0001                =1   121     NEGATIVE        EQU   -1  ; flag for negative
+                      =1   122     
+  0000                =1   123     MIN_SPEED       EQU 0           ; the speed of the RoboTrike at rest
+  FFFE                =1   124     MAX_SPEED       EQU 65534       ; the fastest the RoboTrike can travel
+ -003C                =1   125     MIN_ELEVATION   EQU   -60       ; the lowest the turret can go
+  003C                =1   126     MAX_ELEVATION   EQU   60        ; the highest the turret can go
+  FFFF                =1   127     IGNORE_SPEED    EQU   65535     ; current speed shouldn't change
+ -8000                =1   128     IGNORE_DEGREE   EQU   -32768    ; current degree shouldn't change
+  0000                =1   129     LASER_OFF       EQU   0         ; flag for laser is off
+  0001                =1   130     LASER_ON        EQU   1         ; flag for Laser on
+                           131     
+                           132     CGROUP  GROUP   CODE
+                           133     DGROUP  GROUP   DATA
+                           134     
+----                       135     CODE    SEGMENT PUBLIC 'CODE'
+                           136     
+                           137     
+                           138             ASSUME  CS:CGROUP, DS:DGROUP
+                           139     
+                           140     EXTRN   SetMotorSpeed:NEAR          ; sets the speed and direction of the motors
+                           141     EXTRN   GetMotorSpeed:NEAR          ; gets the current speed of the motors
+                           142     EXTRN   GetMotorDirection:NEAR      ; gets the current direction of the motors
+                           143     EXTRN   SetTurretAngle:NEAR         ; sets the angle of the turret
+                           144     EXTRN   SetRelTurretAngle:NEAR      ; sets the angle of the turret relative
+                           145                                         ; to the current angle
+                           146     EXTRN   SetTurretElevation:NEAR     ; sets the elevation of the turret
+                           147     EXTRN   SetLaser:NEAR               ; sets the laser to be on or off
+                           148             
+                           149     ; InitSerialChar
+                           150     ;
+                           151     ; Description:       This function initializes the 5 shared variables:
+                           152     ;                    curCommand, curSign, curNumber, curState and curError.
+                           153     ;
+                           154     ; Operation:         This function sets curCommand to be NO_COMMAND, since no
+                           155     ;                    commands are currently being read. It sets the curSign to
+                           156     ;                    be UNSIGNED by default. It sets the curNumber to be 0,
+                           157     ;                    since no number is read yet and when digits are read, they
+                           158     ;                    will be appended to curNumber. It sets the curState to be
+                           159     ;                    ST_INITIAL, the initial state. It sets the current error
+                           160     ;                    to have NO_ERROR.
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    4
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           161     ;
+                           162     ; Arguments:         None.
+                           163     ; Return Value:      None.
+                           164     ;
+                           165     ; Local Variables:   None.
+                           166     ; Shared Variables:  curCommand - the current command being parsed (DS, W)
+                           167     ;                    curSign    - the current sign of number being parsed (DS, W)
+                           168     ;                    curNumber  - the number being read for current command (DS, W)
+                           169     ;                    curState   - the current state (DS, W)
+                           170     ;                    curError   - the current error (DS, W)
+                           171     ; Global Variables:  None.
+                           172     ;
+                           173     ; Input:             None.
+                           174     ; Output:            None.
+                           175     ;
+                           176     ; Error Handling:    None.
+                           177     ;
+                           178     ; Algorithms:        None.
+                           179     ; Data Structures:   None.
+                           180     ;
+                           181     ; Registers Changed: None.
+                           182     ;
+                           183     ; Author:            Nancy Cao
+                           184     ; Revision History:
+                           185     ;     11/24/15  Nancy Cao   initial comments and pseudocode
+                           186     ;     12/21/15  Nancy Cao   initial code and comments
+                           187     ;     12/23/15  Nancy Cao   updated code and comments
+                           188     
+0000                       189     InitSerialChar      PROC        NEAR
+                           190                         PUBLIC      InitSerialChar
+                           191     
+0000 C6060000FF90   R      192         MOV    curCommand, NO_COMMAND       ; no command being read yet
+0006 C60601000090   R      193         MOV    curSign, UNSIGNED            ; default to unsigned for numbers
+000C C70602000000   R      194         MOV    curNumber, 0                 ; no numbers read from serial yet
+0012 C60604000090   R      195         MOV    curState, ST_INITIAL         ; initial state machine to be beginning
+0018 C60605000090   R      196         MOV    curError, NO_ERROR           ; currently no errors present
+                           197         
+001E C3                    198         RET
+                           199     
+                           200     InitSerialChar    ENDP
+                           201     
+                           202     ; ParseSerialChar
+                           203     ;
+                           204     ; Description:       This function re-initializes the parser if the end state
+                           205     ;                    or an error state is reached. It then reads the next token,
+                           206     ;                    which corresponds to the next character read from the
+                           207     ;                    serial, and determines the next state and action to perform
+                           208     ;                    based on the StateTable. A number is returned signifying
+                           209     ;                    any error that occurred while parsing the character.
+                           210     ;
+                           211     ; Operation:         This function first checks the state to make sure that it
+                           212     ;                    is not at the end, meaning the entire command has been
+                           213     ;                    processed successfully, or that the state is not at an
+                           214     ;                    error, meaning that the command read was bad. If either
+                           215     ;                    case occurs, the parser is reset for the next command
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    5
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           216     ;                    read. Otherwise, another token with its type and value is
+                           217     ;                    received via GetToken, which is the representative of the
+                           218     ;                    next character read from the serial. From this token, the
+                           219     ;                    the function determines which state to transition to by
+                           220     ;                    looking up in the StateTable. The state determined based
+                           221     ;                    on the token is re-assigned to the current state.
+                           222     ;                    Afterwards, the action corresponding to the token is
+                           223     ;                    performed. In the end, the current error, if any, is
+                           224     ;                    returned.
+                           225     ;
+                           226     ; Arguments:         c (AL) - the current character to parse
+                           227     ; Return Value:      AX     - status of the parsing operation; NO_ERROR is
+                           228     ;                             returned if there is no parsing error; otherwise
+                           229     ;                             a non-zero value is returned (OVERFLOW_ERROR or
+                           230     ;                             CHAR_ERROR)
+                           231     ;
+                           232     ; Local Variables:   None.
+                           233     ; Shared Variables:  curState - the current state (DS, R/W)
+                           234     ;                    curError - the curret error associated with the character,
+                           235     ;                               if any (DS, R/W)
+                           236     ; Global Variables:  None.
+                           237     ;
+                           238     ; Input:             None.
+                           239     ; Output:            None.
+                           240     ;
+                           241     ; Error Handling:    None.
+                           242     ;
+                           243     ; Algorithms:        None.
+                           244     ; Data Structures:   None.
+                           245     ;
+                           246     ; Registers Changed: None.
+                           247     ;
+                           248     ; Author:            Nancy Cao
+                           249     ; Revision History:
+                           250     ;     11/24/15  Nancy Cao   initial comments and pseudocode
+                           251     ;     12/21/15  Nancy Cao   initial code and comments
+                           252     ;     12/23/15  Nancy Cao   finished code and updated comments
+                           253     ;     12/24/15  Nancy Cao   updated comments
+                           254     ;     01/02/16  Nancy Cao   fixed minor bug to set CL to initial state
+                           255     
+001F                       256     ParseSerialChar      PROC        NEAR
+                           257                          PUBLIC      ParseSerialChar
+                           258               
+001F 51                    259         PUSH CX
+0020 52                    260         PUSH DX
+                           261         
+0021                       262     GetCurrentState:
+0021 8A0E0400       R      263         MOV CL, curState         ; get the current state of machine
+                           264         ;JMP CheckState
+                           265                         
+0025                       266     CheckState:                  ; check if at end or error state
+0025 80F90B                267         CMP CL, ST_END           ; see if at the end state
+0028 7408                  268         JE  ResetSerialChar      ; if so re-initialize serial parser
+                           269         
+002A 80F90A                270         CMP CL, ST_ERROR         ; see if in the error state
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    6
+
+
+LOC  OBJ                  LINE     SOURCE
+
+002D 7403                  271         JE  ResetSerialChar      ; if so re-initialize serial parser
+002F EB0690                272         JMP DoNextToken          ; otherwise look for next token
+                           273         
+0032                       274     ResetSerialChar:             ; reset shared variables for next command
+0032 E8CBFF                275         CALL InitSerialChar      ; re-initialize
+0035 B100                  276         MOV CL, ST_INITIAL       ; set to initial state
+                           277         ;JMP DoNextToken         ; get the next token
+                           278         
+0037                       279     DoNextToken:                 ; get the next token type and value
+0037 E82900                280         CALL GetToken            ; get the token type and value
+003A 8AF4                  281         MOV  DH, AH              ; move token type to DH
+003C 8AE8                  282         MOV  CH, AL              ; move token value to CH
+                           283         ;JMP ComputeTransition
+                           284     
+003E                       285     ComputeTransition:                       ; figure out what transition to do
+003E B00C                  286         MOV AL, NUM_TOKEN_TYPES      ; find row in the table
+0040 F6E1                  287         MUL CL                   ; AX is start of row for current state
+0042 02C6                  288         ADD AL, DH               ; get the actual transition
+0044 80D400                289         ADC AH, 0                ; propagate low byte carry into high byte
+                           290     
+0047 6BD80390              291         IMUL BX, AX, SIZE TRANSITION_ENTRY   ; now convert to table offset
+                           292         ;JMP DoTransition
+                           293      
+004B                       294     DoTransition:                ; do the transition and move to the next state
+004B 2E8A8F5D01     R      295             MOV     CL, CS:StateTable[BX].NEXTSTATE ; search for transition in the state
+                           296                                             ; table
+0050 880E0400       R      297         MOV curState, CL         ; update the current state
+                           298         ;JMP DoAction
+                           299     
+0054                       300     DoAction:                         ; do the action
+0054 8AC5                  301         MOV  AL, CH                   ; get token value and pass as argument
+0056 2EFF975E01     R      302         CALL CS:StateTable[BX].ACTION ; do the action
+                           303         ;JMP EndParseSerialChar       ; done
+                           304     
+005B                       305     EndParseSerialChar:
+005B A00500         R      306         MOV AL, curError              ; return the error from reading the character,
+                           307                                       ; if any
+005E B400                  308         MOV AH, 0                     ; clear higher bit of AX
+                           309         
+0060 5A                    310         POP DX
+0061 59                    311         POP CX
+                           312         
+0062 C3                    313         RET
+                           314         
+                           315                         
+                           316     ParseSerialChar     ENDP                    
+                           317     
+                           318     ; GetToken
+                           319     ;
+                           320     ; Description:      This procedure returns the token class and token value for
+                           321     ;                   the passed character.  The character is truncated to
+                           322     ;                   7-bits.
+                           323     ;
+                           324     ; Operation:        Looks up the passed character in two tables, one for token
+                           325     ;                   types or classes, the other for token values.
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    7
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           326     ;
+                           327     ; Arguments:        AL - character to look up.
+                           328     ;
+                           329     ; Return Value:     AL - token value for the character.
+                           330     ;                   AH - token type or class for the character.
+                           331     ;
+                           332     ; Local Variables:  BX - table pointer, points at lookup tables.
+                           333     ;
+                           334     ; Shared Variables: None.
+                           335     ;
+                           336     ; Global Variables: None.
+                           337     ;
+                           338     ; Input:            None.
+                           339     ;
+                           340     ; Output:           None.
+                           341     ;
+                           342     ; Error Handling:   None.
+                           343     ;
+                           344     ; Algorithms:       Table lookup.
+                           345     ;
+                           346     ; Data Structures:  Two tables, one containing token values and the other
+                           347     ;                   containing token types.
+                           348     ;
+                           349     ; Registers Used:   AX, BX.
+                           350     ;
+                           351     ; Stack Depth:      0 words.
+                           352     ;
+                           353     ; Author:           Glen George
+                           354     ; Last Modified:    Feb. 26, 2003
+                           355     
+                           356     
+0063                       357     GetToken        PROC    NEAR
+                           358     
+                           359     
+0063 53                    360         PUSH BX
+                           361         
+0064                       362     InitGetToken:                           ;setup for lookups
+0064 247F                  363             AND     AL, TOKEN_MASK          ;strip unused bits (high bit)
+0066 8AE0                  364             MOV     AH, AL                  ;and preserve value in AH
+                           365     
+0068                       366     TokenTypeLookup:                        ;get the token type
+0068 BB0D0390       R      367         MOV     BX, OFFSET(TokenTypeTable)  ;BX points at table
+006C 2ED7                  368             XLAT    CS:TokenTypeTable       ;have token type in AL
+006E 86E0                  369             XCHG    AH, AL                  ;token type in AH, character in AL
+                           370     
+0070                       371     TokenValueLookup:                       ;get the token value
+0070 BB8D0390       R      372         MOV     BX, OFFSET(TokenValueTable)  ;BX points at table
+0074 2ED7                  373             XLAT    CS:TokenValueTable      ;have token value in AL
+                           374     
+0076                       375     EndGetToken:                            ;done looking up type and value
+                           376         
+0076 5B                    377         POP BX
+                           378         
+0077 C3                    379         RET
+                           380     
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    8
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           381     GetToken            ENDP
+                           382     
+                           383     
+                           384     ; SetCommand
+                           385     ;
+                           386     ; Description:       This function sets the current command being read from
+                           387     ;                    the parser (indicated by index number).
+                           388     ;
+                           389     ; Operation:         This function takes the current index number set in AL
+                           390     ;                    and sets it to the current command for later lookup in
+                           391     ;                    in the JumpTable to perform the command, if the entire
+                           392     ;                    command is processed successfully.
+                           393     ;
+                           394     ; Arguments:         command (AL) - token value that corresponds to the current
+                           395     ;                                   command character value being parsed
+                           396     ; Return Value:      None.
+                           397     ;
+                           398     ; Local Variables:   None.
+                           399     ; Shared Variables:  curCommand - the current command (DS, W)
+                           400     ; Global Variables:  None.
+                           401     ;
+                           402     ; Input:             None.
+                           403     ; Output:            None.
+                           404     ;
+                           405     ; Error Handling:    None.
+                           406     ;
+                           407     ; Algorithms:        None.
+                           408     ; Data Structures:   None.
+                           409     ;
+                           410     ; Registers Changed: None.
+                           411     ;
+                           412     ; Author:            Nancy Cao
+                           413     ; Revision History:
+                           414     ;     12/21/15  Nancy Cao   initial code and comments
+                           415     ;     12/24/15  Nancy Cao   updated comments
+                           416     
+0078                       417     SetCommand      PROC        NEAR
+                           418     
+0078 A20000         R      419         MOV curCommand, AL     ; curCommand = command index passed in
+007B C3                    420         RET
+                           421     
+                           422     SetCommand      ENDP
+                           423     
+                           424     ; SetSign
+                           425     ;
+                           426     ; Description:       This function sets the current sign of the number being
+                           427     ;                    read from the parser.
+                           428     ;
+                           429     ; Operation:         This function takes the current value set in AL and sets it
+                           430     ;                    to the current sign which will be used later to figure out
+                           431     ;                    whether the number passed in is positive or negative. The
+                           432     ;                    sign can be either UNSIGNED, POSITIVE, or NEGATIVE.
+                           433     ;
+                           434     ; Arguments:         sign (AL) - token value that corresponds to the current
+                           435     ;                                sign character value being parsed
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE    9
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           436     ; Return Value:      AX        - flag whether there was an error parsing the
+                           437     ;                                character or not
+                           438     ;
+                           439     ; Local Variables:   None.
+                           440     ; Shared Variables:  curSign - the current sign for the number argument (DS, W)
+                           441     ; Global Variables:  None.
+                           442     ;
+                           443     ; Input:             None.
+                           444     ; Output:            None.
+                           445     ;
+                           446     ; Error Handling:    None.
+                           447     ;
+                           448     ; Algorithms:        None.
+                           449     ; Data Structures:   None.
+                           450     ;
+                           451     ; Registers Changed: None.
+                           452     ;
+                           453     ; Author:            Nancy Cao
+                           454     ; Revision History:
+                           455     ;     12/21/15  Nancy Cao   initial code and comments
+                           456     ;     12/24/15  Nancy Cao   updated comments
+                           457     
+007C                       458     SetSign      PROC        NEAR
+                           459     
+007C A20100         R      460         MOV curSign, AL   ; curSign = sign
+007F C3                    461         RET
+                           462     
+                           463     SetSign      ENDP
+                           464     
+                           465     ; AddDigit
+                           466     ;
+                           467     ; Description:       This function appends the current digit parsed to the
+                           468     ;                    current number stored as an argument for the current
+                           469     ;                    command.
+                           470     ;
+                           471     ; Operation:         This function multiplies the current number by 10 so that
+                           472     ;                    a 0 digit is introduced to the number. The function checks
+                           473     ;                    that this size of a number does not result in an overflow.
+                           474     ;                    If it does, an overflow error value is returned to
+                           475     ;                    ParseSerialChar, and the current state is changed to be
+                           476     ;                    an error state. Otherwise, the function checks that the
+                           477     ;                    current number is positive or negative. If it is negative,
+                           478     ;                    the digit is negated first before being appended.
+                           479     ;                    Otherwise, it is appended without being negated.
+                           480     ;                    Afterwards, the function checks again if there is overflow
+                           481     ;                    after appending it. If yes, an overflow error value is
+                           482     ;                    returned to ParseSerialChar. The current state is changed
+                           483     ;                    to be an error state. Otherwise, no error is returned and
+                           484     ;                    the digit is appended successfully.
+                           485     ;
+                           486     ; Arguments:         digit (AL) - token value that corresponds to the current
+                           487     ;                                 digit value being parsed
+                           488     ; Return Value:      AX         - flag whether there was an error parsing the
+                           489     ;                                 character or not
+                           490     ;
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   10
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           491     ; Local Variables:   None.
+                           492     ; Shared Variables:  curSign   - the sign for the current umber argument (DS, R)
+                           493     ;                    curNumber - the current number argument for the command (DS, W)
+                           494     ; Global Variables:  None.
+                           495     ;
+                           496     ; Input:             None.
+                           497     ; Output:            None.
+                           498     ;
+                           499     ; Error Handling:    None.
+                           500     ;
+                           501     ; Algorithms:        None.
+                           502     ; Data Structures:   None.
+                           503     ;
+                           504     ; Registers Changed: None.
+                           505     ;
+                           506     ; Author:            Nancy Cao
+                           507     ; Revision History:
+                           508     ;     12/21/15  Nancy Cao   initial code and comments
+                           509     ;     12/24/15  Nancy Cao   updated comments
+                           510     ;     01/02/16  Nancy Cao   fixed to check negative sign
+                           511     
+0080                       512     AddDigit      PROC        NEAR
+                           513     
+0080                       514     CreateNewDigitSpace:
+0080 8AD8                  515         MOV  BL, AL           ; store digit that will be appended to the number
+0082 A10200         R      516         MOV  AX, curNumber    ; the current number moved to AX for multiplication
+0085 B90A00                517         MOV  CX, 10           ; to multiply the current number with to create a new
+                           518                               ; digit space
+0088 BA0000                519         MOV  DX, 0            ; clear DX for multiplication
+008B F7E9                  520         IMUL CX               ; curNumber = curNumber * 10
+008D 7015                  521         JO   SetOverflowError ; if there is overflow from this action set appropriate
+                           522                               ; error
+                           523         ;JMP CheckSign        ; otherwise check the sign of the number before
+                           524                               ; appending the digit
+                           525         
+008F                       526     CheckSign:
+008F B700                  527         MOV BH, 0             ; clear the higher bit of BX
+0091 803E0100FF     R      528         CMP curSign, NEGATIVE ; check if number if negative
+0096 7502                  529         JNE  AppendDigit      ; go ahead and append the digit if not negative
+                           530         ;JMP NegateDigit      ; otherwise negate the digit first before appending it
+                           531     
+0098                       532     NegateDigit:
+0098 F7DB                  533         NEG BX                ; negate the digit
+                           534         ;JMP AppendDigit      ; append the digit
+                           535                               
+009A                       536     AppendDigit:              ; append digit to the current number
+009A 03C3                  537         ADD AX, BX            ; attempt to append digit to the current number
+009C 7006                  538         JO SetOverflowError   ; if there is overflow from this action set appropriate
+                           539                               ; error
+009E A30200         R      540         MOV curNumber, AX     ; curNumber = the new number with appended digit
+00A1 EB1090                541         JMP FinishAddDigit    ; we are done
+                           542         
+00A4                       543     SetOverflowError:                ; set error to overflow
+00A4 C60604000A90   R      544         MOV curState, ST_ERROR       ; go to error state
+00AA C60605000190   R      545         MOV curError, OVERFLOW_ERROR ; change current error to overflow error
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   11
+
+
+LOC  OBJ                  LINE     SOURCE
+
+00B0 EB0190                546         JMP FinishAddDigit           ; we are done
+                           547     
+00B3                       548     FinishAddDigit:
+00B3 C3                    549         RET
+                           550     
+                           551     AddDigit      ENDP
+                           552     
+                           553     ; CallCommand
+                           554     ;
+                           555     ; Description:       This function calls the appropriate command from the
+                           556     ;                    JumpTable according to the index stored in curCommand.
+                           557     ;
+                           558     ; Operation:         The current command is taken and shifted appropriately to
+                           559     ;                    convert from byte index to word index since JumpTable is a
+                           560     ;                    word table. Afterwards, the command is looked up in the
+                           561     ;                    JumpTable and called. The current state is set to be at the
+                           562     ;                    ending state, since the command was executed successfully.
+                           563     ;
+                           564     ; Arguments:         digit (AL) - token value that corresponds to the current
+                           565     ;                                 digit value being parsed
+                           566     ; Return Value:      AX         - flag whether there was an error parsing the
+                           567     ;                                 character or not
+                           568     ;
+                           569     ; Local Variables:   None.
+                           570     ; Shared Variables:  curCommand - the command to execute (DS, R)
+                           571     ; Global Variables:  None.
+                           572     ;
+                           573     ; Input:             None.
+                           574     ; Output:            None.
+                           575     ;
+                           576     ; Error Handling:    None.
+                           577     ;
+                           578     ; Algorithms:        None.
+                           579     ; Data Structures:   None.
+                           580     ;
+                           581     ; Registers Changed: None.
+                           582     ;
+                           583     ; Author:            Nancy Cao
+                           584     ; Revision History:
+                           585     ;     12/21/15  Nancy Cao   initial code and comments
+                           586     ;     12/24/15  Nancy Cao   updated comments
+                           587     
+00B4                       588     CallCommand      PROC        NEAR
+                           589     
+00B4                       590     GetCommandIndex:
+00B4 8A1E0000       R      591         MOV  BL, curCommand          ; get the current command index
+00B8 B700                  592         MOV  BH, 0                   ; clear higher bit of BX
+00BA D1E3                  593         SHL  BX, 1                   ; shift left by one since function jump
+                           594                                      ; table is a word
+                           595         ;JMP CallFunction
+                           596         
+00BC                       597     CallFunction:
+00BC 2EFF974F01     R      598         CALL CS:JumpTable[BX]        ; find the current function to call
+00C1 C3                    599         RET                             
+                           600     
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   12
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           601     CallCommand    ENDP
+                           602     
+                           603     ; ThrowError
+                           604     ;
+                           605     ; Description:       This function sets the error to be a parser character
+                           606     ;                    error.
+                           607     ;
+                           608     ; Operation:         This function sets the error to be a CHAR_ERROR.
+                           609     ;
+                           610     ; Arguments:         None.
+                           611     ; Return Value:      None.
+                           612     ;
+                           613     ; Local Variables:   None.
+                           614     ; Shared Variables:  curError - the current error (DS, W)
+                           615     ; Global Variables:  None.
+                           616     ;
+                           617     ; Input:             None.
+                           618     ; Output:            None.
+                           619     ;
+                           620     ; Error Handling:    None.
+                           621     ;
+                           622     ; Algorithms:        None.
+                           623     ; Data Structures:   None.
+                           624     ;
+                           625     ; Registers Changed: None.
+                           626     ;
+                           627     ; Author:            Nancy Cao
+                           628     ; Revision History:
+                           629     ;     12/21/15  Nancy Cao   initial code and comments
+                           630     ;     12/24/15  Nancy Cao   updated comments
+                           631     
+00C2                       632     ThrowError      PROC        NEAR
+                           633     
+00C2 C60605000290   R      634         MOV curError, CHAR_ERROR   ; curError = CHAR_ERROR
+00C8 C3                    635         RET
+                           636     
+                           637     ThrowError    ENDP
+                           638     
+                           639     ; DoNothing
+                           640     ;
+                           641     ; Description:       This function does nothing.
+                           642     ;
+                           643     ; Operation:         This function does nothing.
+                           644     ;
+                           645     ; Arguments:         None.
+                           646     ; Return Value:      None.
+                           647     ;
+                           648     ; Local Variables:   None.
+                           649     ; Shared Variables:  None.
+                           650     ; Global Variables:  None.
+                           651     ;
+                           652     ; Input:             None.
+                           653     ; Output:            None.
+                           654     ;
+                           655     ; Error Handling:    None.
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   13
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           656     ;
+                           657     ; Algorithms:        None.
+                           658     ; Data Structures:   None.
+                           659     ;
+                           660     ; Registers Changed: None.
+                           661     ;
+                           662     ; Author:            Nancy Cao
+                           663     ; Revision History:
+                           664     ;     12/21/15  Nancy Cao   initial code and comments
+                           665     
+00C9                       666     DoNothing      PROC        NEAR
+                           667     
+00C9 90                    668         NOP
+00CA C3                    669         RET
+                           670     
+                           671     DoNothing     ENDP
+                           672     
+                           673     ; SetAbsoluteSpeed
+                           674     ;
+                           675     ; Description:       This function sets the speed of the motor without changing
+                           676     ;                    the direction of the motor, and no error is returned.
+                           677     ;
+                           678     ; Operation:         This function takes the current number and makes it the
+                           679     ;                    argument for SetMotorSpeed function. The angle of the
+                           680     ;                    RoboTrike is set to be IGNORE_DEGREE. Afterwards,
+                           681     ;                    the state is changed to be at the end state and no errors
+                           682     ;                    are returned.
+                           683     ;
+                           684     ; Arguments:         None.
+                           685     ; Return Value:      AX         - flag whether there was an error parsing the
+                           686     ;                                 character or not
+                           687     ;
+                           688     ; Local Variables:   None.
+                           689     ; Shared Variables:  curNumber  - the number being read for current command (DS, R)
+                           690     ;                    curState   - the current state (DS, W)
+                           691     ; Global Variables:  None.
+                           692     ;
+                           693     ; Input:             None.
+                           694     ; Output:            None.
+                           695     ;
+                           696     ; Error Handling:    None.
+                           697     ;
+                           698     ; Algorithms:        None.
+                           699     ; Data Structures:   None.
+                           700     ;
+                           701     ; Registers Changed: None.
+                           702     ;
+                           703     ; Author:            Nancy Cao
+                           704     ; Revision History:
+                           705     ;     12/21/15  Nancy Cao   initial code and comments
+                           706     ;     12/24/15  Nancy Cao   updated comments
+                           707     
+00CB                       708     SetAbsoluteSpeed      PROC        NEAR
+                           709     
+00CB                       710     CallSetMotorSpeed:
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   14
+
+
+LOC  OBJ                  LINE     SOURCE
+
+00CB A10200         R      711         MOV     AX, curNumber       ; get the current number that is the speed
+                           712                                     ; as an argument to SetMotorSpeed
+00CE BB0080                713         MOV     BX, IGNORE_DEGREE   ; motor angles remain unchanged, passed as an
+                           714                                     ; argument to SetMotorSpeed
+00D1 E80000         E      715         CALL    SetMotorSpeed       ; set motor speeds
+                           716     
+00D4 C3                    717         RET
+                           718     
+                           719     SetAbsoluteSpeed      ENDP
+                           720     
+                           721     ; SetRelativeSpeed
+                           722     ;
+                           723     ; Description:       This function sets the speed of the motor relative to the
+                           724     ;                    current speed without changing the direction of the motor.
+                           725     ;                    If MAX_SPEED or MIN_SPEED is reached, the speed is set to
+                           726     ;                    those instead. No error is returned.
+                           727     ;
+                           728     ; Operation:         This function gets the current motor speed, then checks
+                           729     ;                    the sign of the number argument. If the sign is negative,
+                           730     ;                    then the number is subtracted from the current speed, and
+                           731     ;                    is checked that the speed is not lower than MIN_SPEED. If
+                           732     ;                    it is lower than MIN_SPEED, then the speed is set to
+                           733     ;                    MIN_SPEED instead. If the sign is positive, then the number
+                           734     ;                    is added to the current speed, and is checked that the
+                           735     ;                    speed is not greater than MAX_SPEED. If it is greater than
+                           736     ;                    MAX_SPEED, then the speed is set to MAX_SPEED instead.
+                           737     ;                    Afterwards, the angle argument is set to be IGNORE_DEGREE,
+                           738     ;                    since the angle should not be changed, before calling
+                           739     ;                    SetMotorSpeed. At the end, the state is changed to the
+                           740     ;                    end state, and no error is returned.
+                           741     ;
+                           742     ; Arguments:         None.
+                           743     ; Return Value:      AX         - flag whether there was an error parsing the
+                           744     ;                                 character or not
+                           745     ;
+                           746     ; Local Variables:   None.
+                           747     ; Shared Variables:  curSign    - the current sign of number being parsed (DS, R)
+                           748     ;                    curNumber  - the number being read for current command (DS, R)
+                           749     ;                    curState   - the current state (DS, W)
+                           750     ; Global Variables:  None.
+                           751     ;
+                           752     ; Input:             None.
+                           753     ; Output:            None.
+                           754     ;
+                           755     ; Error Handling:    None.
+                           756     ;
+                           757     ; Algorithms:        None.
+                           758     ; Data Structures:   None.
+                           759     ;
+                           760     ; Registers Changed: None.
+                           761     ;
+                           762     ; Author:            Nancy Cao
+                           763     ; Revision History:
+                           764     ;     12/21/15  Nancy Cao   initial code and comments
+                           765     ;     12/24/15  Nancy Cao   updated comments
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   15
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           766     
+00D5                       767     SetRelativeSpeed      PROC        NEAR
+                           768     
+00D5 50                    769         PUSH AX
+00D6 53                    770         PUSH BX
+00D7                       771     GetCurrentSpeed:          ; check the current speed
+00D7 E80000         E      772         CALL GetMotorSpeed    ; get the current speed of the motor in AX
+00DA 803E0100FF     R      773         CMP curSign, NEGATIVE ; check if number if negative
+00DF 7402                  774         JE CheckSpeedZero     ; if yes check if speed goes to MIN_SPEED
+00E1 7F12                  775         JG CheckSpeedMax     ; if no check if speed goes to MAX_SPEED
+                           776         
+00E3                       777     CheckSpeedZero:           ; if speed is being decreased check if it reaches
+                           778                               ; MIN_SPEED
+00E3 F71E0200       R      779         NEG curNumber         ; negate number first to account for negative value
+00E7 2B060200       R      780         SUB AX, curNumber     ; subtract the passed in speed from the current speed
+00EB 7202                  781         JC SetSpeedZero      ; if yes set the speed to MIN_SPEED
+00ED 7315                  782         JNC SetSpeed          ; otherwise go ahead and set the speed
+                           783      
+00EF                       784     SetSpeedZero:             ; set the speed to be MIN_SPEED
+00EF B80000                785         MOV AX, MIN_SPEED     ; speed = MIN_SPEED
+00F2 EB1090                786         JMP SetSpeed          ; call SetMotorSpeed
+                           787       
+00F5                       788     CheckSpeedMax:            ; if speed is being increased check if it reaches
+                           789                               ; MAX_SPEED
+00F5 03060200       R      790         ADD AX, curNumber     ; add the passed in speed from the current speed
+00F9 7203                  791         JC  SetSpeedMax       ; if there was overflow then set the speed to MAX_SPEED
+00FB EB0790                792         JMP SetSpeed          ; otherwise go ahead and set the speed
+                           793         
+00FE                       794     SetSpeedMax:              ; set the speed to be MAX_SPEED
+00FE B8FEFF                795         MOV AX, MAX_SPEED     ; speed = MAX_SPEED
+0101 EB0190                796         JMP SetSpeed          ; call SetMotorSpeed
+                           797      
+0104                       798     SetSpeed:                 ; set the speed of the motors
+0104 BB0080                799         MOV BX, IGNORE_DEGREE ; don't change the angle of the RoboTrike
+0107 E80000         E      800         CALL SetMotorSpeed    ; set the speed
+                           801         
+010A 5B                    802         POP BX
+010B 58                    803         POP AX
+                           804     
+010C C3                    805         RET
+                           806     
+                           807     SetRelativeSpeed     ENDP
+                           808     
+                           809     ; SetDirection
+                           810     ;
+                           811     ; Description:       This function sets the direction of the RoboTrike without
+                           812     ;                    changing the speed of its motors.
+                           813     ;
+                           814     ; Operation:         This function takes the current number, which is the
+                           815     ;                    degree the RoboTrike should turn. The number is modded by
+                           816     ;                    360 to prevent out of bound degrees and then added to
+                           817     ;                    the current degree of the motor angle (get from
+                           818     ;                    GetMotorDirection function). The speed is set to be ignored
+                           819     ;                    (IGNORE_SPEED) as an argument to SetMotorSpeed, and the
+                           820     ;                    direction argument is set to be the calculated new angle,
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   16
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           821     ;                    before SetMotorSpeed is called. Afterwards, the state is
+                           822     ;                    changed to the ending state and no error is returned.
+                           823     ;
+                           824     ; Arguments:         None.
+                           825     ; Return Value:      AX         - flag whether there was an error parsing the
+                           826     ;                                 character or not
+                           827     ;
+                           828     ; Local Variables:   None.
+                           829     ; Shared Variables:  curNumber  - the number being read for current command (DS, R)
+                           830     ;                    curState   - the current state (DS, W)
+                           831     ; Global Variables:  None.
+                           832     ;
+                           833     ; Input:             None.
+                           834     ; Output:            None.
+                           835     ;
+                           836     ; Error Handling:    None.
+                           837     ;
+                           838     ; Algorithms:        None.
+                           839     ; Data Structures:   None.
+                           840     ;
+                           841     ; Registers Changed: None.
+                           842     ;
+                           843     ; Author:            Nancy Cao
+                           844     ; Revision History:
+                           845     ;     12/21/15  Nancy Cao   initial code and comments
+                           846     ;     12/24/15  Nancy Cao   updated comments
+                           847     
+010D                       848     SetDirection      PROC        NEAR
+                           849     
+010D                       850     GetNewAngle:
+010D A10200         R      851         MOV AX, curNumber         ; retrieve the new direction to add/subtract
+                           852                                   ; to current direction
+0110 BB6801                853         MOV BX, 360               ; to prepare to mod the new direction
+0113 99                    854         CWD                       ; convert signed angle word to double for
+                           855                                   ; signed division
+0114 F7FB                  856         IDIV BX                   ; mod the number by 360 to prevent out of bounds;
+                           857                                   ; new angle in DX
+0116 E80000         E      858         CALL GetMotorDirection    ; get the current motor angle
+0119 03C2                  859         ADD  AX, DX               ; add current motor angle with given angle
+                           860         ;JMP ChangeDirection
+                           861         
+011B                       862     ChangeDirection:
+011B 8BD8                  863         MOV  BX, AX               ; make the new angle argument for SetMotorSpeed
+011D B8FFFF                864         MOV  AX, IGNORE_SPEED     ; prevent speed changing by passing IGNORE_SPEED
+                           865                                   ; as an argument
+0120 E80000         E      866         CALL SetMotorSpeed        ; set new direction in motors
+                           867         
+0123                       868     FinishSetDirection:
+0123 C3                    869         RET
+                           870     
+                           871     SetDirection      ENDP
+                           872     
+                           873     ; RotateTurretAngle
+                           874     ;
+                           875     ; Description:       This function determines whether the turret should be
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   17
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           876     ;                    rotated absolutely or relatively based on the sign of the
+                           877     ;                    number argument and then calls the appropriate function
+                           878     ;                    to set the new turret angle.
+                           879     ;
+                           880     ; Operation:         This function first sets the current number as the argument
+                           881     ;                    to either SetTurretAngle or SetRelTurretAngle. It then
+                           882     ;                    checks whether the current number is signed or unsigned.
+                           883     ;                    If it is unsigned, SetTurretAngle is called. If it is
+                           884     ;                    signed, SetRelTurretAngle is called instead. At the end,
+                           885     ;                    the state is set to be the end and no error is returned
+                           886     ;                    to ParseSerialChar.
+                           887     ;
+                           888     ; Arguments:         None.
+                           889     ; Return Value:      AX         - flag whether there was an error parsing the
+                           890     ;                                 character or not
+                           891     ;
+                           892     ; Local Variables:   None.
+                           893     ; Shared Variables:  curSign    - the current sign of number being parsed (DS, R)
+                           894     ;                    curNumber  - the number being read for current command (DS, R)
+                           895     ;                    curState   - the current state (DS, W)
+                           896     ; Global Variables:  None.
+                           897     ;
+                           898     ; Input:             None.
+                           899     ; Output:            None.
+                           900     ;
+                           901     ; Error Handling:    None.
+                           902     ;
+                           903     ; Algorithms:        None.
+                           904     ; Data Structures:   None.
+                           905     ;
+                           906     ; Registers Changed: None.
+                           907     ;
+                           908     ; Author:            Nancy Cao
+                           909     ; Revision History:
+                           910     ;     12/21/15  Nancy Cao   initial code and comments
+                           911     ;     12/24/15  Nancy Cao   updated comments
+                           912     
+0124                       913     RotateTurretAngle      PROC        NEAR
+                           914     
+0124                       915     CheckAngleType:
+0124 A10200         R      916         MOV AX, curNumber           ; moving number to be argument of either
+                           917                                     ; SetTurretAngle or SetRelTurretAngle
+0127 803E010000     R      918         CMP curSign, UNSIGNED       ; check sign of number
+012C 7402                  919         JE  AbsoluteRotate          ; if no sign then rotate absolute angle
+012E 7506                  920         JNE RelativeRotate          ; otherwise rotate relative angle
+                           921         
+0130                       922     AbsoluteRotate:
+0130 E80000         E      923         CALL SetTurretAngle         ; rotate absolute angle
+0133 EB0490                924         JMP  FinishRotate           ; finished rotating turret
+                           925     
+0136                       926     RelativeRotate:
+0136 E80000         E      927         CALL SetRelTurretAngle      ; rotate relative angle
+                           928         ;JMP FinishRotate           ; finished rotating turret
+                           929         
+0139                       930     FinishRotate:
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   18
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0139 C3                    931         RET
+                           932     
+                           933     RotateTurretAngle      ENDP    
+                           934     
+                           935     ; SetElevation
+                           936     ;
+                           937     ; Description:       This function sets the elevation of the turret and returns
+                           938     ;                    no error.
+                           939     ;
+                           940     ; Operation:         This function gets the current number and sets it as the
+                           941     ;                    argument for SetTurretElevation. SetTurretElevation is then
+                           942     ;                    called, the state is changed to end, and no error is
+                           943     ;                    returned to ParseSerialChar.
+                           944     ;
+                           945     ; Arguments:         None.
+                           946     ; Return Value:      AX         - flag whether there was an error parsing the
+                           947     ;                                 character or not
+                           948     ;
+                           949     ; Local Variables:   None.
+                           950     ; Shared Variables:  curState   - the current state (DS, W)
+                           951     ; Global Variables:  None.
+                           952     ;
+                           953     ; Input:             None.
+                           954     ; Output:            None.
+                           955     ;
+                           956     ; Error Handling:    None.
+                           957     ;
+                           958     ; Algorithms:        None.
+                           959     ; Data Structures:   None.
+                           960     ;
+                           961     ; Registers Changed: None.
+                           962     ;
+                           963     ; Author:            Nancy Cao
+                           964     ; Revision History:
+                           965     ;     12/21/15  Nancy Cao   initial code and comments
+                           966     ;     12/24/15  Nancy Cao   updated comments
+                           967     
+013A                       968     SetElevation      PROC        NEAR
+                           969     
+013A A10200         R      970         MOV AX, curNumber            ; move current number to be argument for
+                           971                                      ; SetTurretElevation
+013D E80000         E      972         CALL SetTurretElevation      ; set the turret elevation
+                           973     
+0140 C3                    974         RET
+                           975     
+                           976     SetElevation     ENDP
+                           977     
+                           978     ; TurnLaserOn
+                           979     ;
+                           980     ; Description:       This function turns the turret laser on and returns no
+                           981     ;                    error.
+                           982     ;
+                           983     ; Operation:         This function passes LASER_ON to the SetLaser function,
+                           984     ;                    calls the SetLaser function, changes the state to the
+                           985     ;                    ending state, and then returns no error.
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   19
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           986     ;
+                           987     ; Arguments:         None.
+                           988     ; Return Value:      AX         - flag whether there was an error parsing the
+                           989     ;                                 character or not
+                           990     ;
+                           991     ; Local Variables:   None.
+                           992     ; Shared Variables:  curState   - the current state (DS, W)
+                           993     ; Global Variables:  None.
+                           994     ;
+                           995     ; Input:             None.
+                           996     ; Output:            None.
+                           997     ;
+                           998     ; Error Handling:    None.
+                           999     ;
+                          1000     ; Algorithms:        None.
+                          1001     ; Data Structures:   None.
+                          1002     ;
+                          1003     ; Registers Changed: None.
+                          1004     ;
+                          1005     ; Author:            Nancy Cao
+                          1006     ; Revision History:
+                          1007     ;     12/21/15  Nancy Cao   initial code and comments
+                          1008     ;     12/24/15  Nancy Cao   updated comments
+                          1009     
+0141                      1010     TurnLaserOn      PROC        NEAR
+                          1011     
+0141 B80100               1012         MOV  AX, LASER_ON     ; set argument to be LASER_ON (non-zero) before calling
+                          1013                               ; SetLaser
+0144 E80000         E     1014         CALL SetLaser         ; fire laser
+                          1015         
+0147 C3                   1016         RET
+                          1017     
+                          1018     TurnLaserOn      ENDP
+                          1019     
+                          1020     ; TurnLaserOff
+                          1021     ;
+                          1022     ; Description:       This function turns the turret laser off and returns no
+                          1023     ;                    error.
+                          1024     ;
+                          1025     ; Operation:         This function passes LASER_OFF to the SetLaser function,
+                          1026     ;                    calls the SetLaser function, changes the state to the
+                          1027     ;                    ending state, and then returns no error.
+                          1028     ;
+                          1029     ; Arguments:         None.
+                          1030     ; Return Value:      AX         - flag whether there was an error parsing the
+                          1031     ;                                 character or not
+                          1032     ;
+                          1033     ; Local Variables:   None.
+                          1034     ; Shared Variables:  curState   - the current state (DS, W)
+                          1035     ; Global Variables:  None.
+                          1036     ;
+                          1037     ; Input:             None.
+                          1038     ; Output:            None.
+                          1039     ;
+                          1040     ; Error Handling:    None.
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   20
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1041     ;
+                          1042     ; Algorithms:        None.
+                          1043     ; Data Structures:   None.
+                          1044     ;
+                          1045     ; Registers Changed: None.
+                          1046     ;
+                          1047     ; Author:            Nancy Cao
+                          1048     ; Revision History:
+                          1049     ;     12/21/15  Nancy Cao   initial code and comments
+                          1050     ;     12/24/15  Nancy Cao   updated comments
+                          1051     
+                          1052     
+0148                      1053     TurnLaserOff      PROC        NEAR
+                          1054     
+0148 B80000               1055         MOV  AX, LASER_OFF    ; set argument to be LASER_OFF (0) before calling SetLaser
+014B E80000         E     1056         CALL SetLaser         ; turn off laser
+                          1057         
+014E C3                   1058         RET
+                          1059     
+                          1060     TurnLaserOff     ENDP
+                          1061         
+014F                      1062     JumpTable LABEL WORD
+014F CB00           R     1063         DW        OFFSET(SetAbsoluteSpeed)     ; set RoboTrike absolute speed
+0151 D500           R     1064         DW        OFFSET(SetRelativeSpeed)     ; set RoboTrike relative speed
+0153 0D01           R     1065         DW        OFFSET(SetDirection)         ; set RoboTrike direction
+0155 2401           R     1066         DW        OFFSET(RotateTurretAngle)    ; rotate turret angle
+0157 3A01           R     1067         DW        OFFSET(SetElevation)         ; set turret elevation
+0159 4101           R     1068         DW        OFFSET(TurnLaserOn)          ; turn laser on
+015B 4801           R     1069         DW        OFFSET(TurnLaserOff)         ; turn laser off
+                          1070     
+                          1071         
+                          1072     ; StateTable
+                          1073     ; Description: This state table defines the state machine for the parser. The
+                          1074     ;              rows are associated with the state and the columns are associated
+                          1075     ;              with the token values. This table is used to check which state
+                          1076     ;              to go next based on current state (curState) and token passed and
+                          1077     ;              which function to call as a result.
+                          1078     ; Revision History:
+                          1079     ;     12/21/15   Nancy Cao   initial code and comment
+                          1080         
+----                      1081     TRANSITION_ENTRY        STRUC           ;structure used to define table
+0000                      1082         NEXTSTATE   DB      ?               ;the next state for the transition
+0001                      1083         ACTION      DW      ?               ;first action for the transition
+----                      1084     TRANSITION_ENTRY      ENDS
+                          1085        
+                          1086         
+                          1087     
+                          1088     ;define a macro to make table a little more readable
+                          1089     ;macro just does an offset of the action routine entries to build the STRUC
+                          1090     
+                          1091     
+015D                      1092     StateTable              LABEL           TRANSITION_ENTRY
+                          1093         
+                          1094         ;Current State = ST_INITIAL                     Input Token Type   
+                          1095 +1      
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   21
+
+
+LOC  OBJ                  LINE     SOURCE
+
+015D 01             R     1096 +2      TRANSITION_ENTRY< ST_ABS_SPEED, OFFSET( SetCommand)>
+015E 7800
+                          1097 +1           ; TOKEN_ABS_SPEED
+                          1098 +1      
+0160 02             R     1099 +2      TRANSITION_ENTRY< ST_REL_SPEED, OFFSET( SetCommand)>
+0161 7800
+                          1100 +1           ; TOKEN_REL_SPEED
+                          1101 +1      
+0163 03             R     1102 +2      TRANSITION_ENTRY< ST_DIRECTION, OFFSET( SetCommand)>
+0164 7800
+                          1103 +1           ; TOKEN_DIRECTION
+                          1104 +1      
+0166 04             R     1105 +2      TRANSITION_ENTRY< ST_ROTATE, OFFSET(    SetCommand)>
+0167 7800
+                          1106 +1           ; TOKEN_ROTATE
+                          1107 +1      
+0169 05             R     1108 +2      TRANSITION_ENTRY< ST_ELEVATE, OFFSET(   SetCommand)>
+016A 7800
+                          1109 +1           ; TOKEN_ELEVATE
+                          1110 +1      
+016C 06             R     1111 +2      TRANSITION_ENTRY< ST_LASER_ON, OFFSET(  SetCommand)>
+016D 7800
+                          1112 +1           ; TOKEN_LASER_ON
+                          1113 +1      
+016F 07             R     1114 +2      TRANSITION_ENTRY< ST_LASER_OFF, OFFSET( SetCommand)>
+0170 7800
+                          1115 +1           ; TOKEN_LASER_OFF
+                          1116 +1      
+0172 0A             R     1117 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0173 C200
+                          1118 +1           ; TOKEN_SIGN
+                          1119 +1      
+0175 0A             R     1120 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0176 C200
+                          1121 +1           ; TOKEN_DIGIT
+                          1122 +1      
+0178 00             R     1123 +2      TRANSITION_ENTRY< ST_INITIAL, OFFSET(   DoNothing)>
+0179 C900
+                          1124 +1            ; TOKEN_RETURN
+                          1125 +1      
+017B 00             R     1126 +2      TRANSITION_ENTRY< ST_INITIAL, OFFSET(   DoNothing)>
+017C C900
+                          1127 +1            ; TOKEN_SPACE
+                          1128 +1      
+017E 0A             R     1129 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+017F C200
+                          1130 +1           ; TOKEN_OTHER
+                          1131         
+                          1132         ;Current State = ST_ABS_SPEED                   Input Token Type   
+                          1133 +1      
+0181 0A             R     1134 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0182 C200
+                          1135 +1           ; TOKEN_ABS_SPEED
+                          1136 +1      
+0184 0A             R     1137 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   22
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0185 C200
+                          1138 +1           ; TOKEN_REL_SPEED
+                          1139 +1      
+0187 0A             R     1140 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0188 C200
+                          1141 +1           ; TOKEN_DIRECTION
+                          1142 +1      
+018A 0A             R     1143 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+018B C200
+                          1144 +1           ; TOKEN_ROTATE
+                          1145 +1      
+018D 0A             R     1146 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+018E C200
+                          1147 +1           ; TOKEN_ELEVATE
+                          1148 +1      
+0190 0A             R     1149 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0191 C200
+                          1150 +1           ; TOKEN_LASER_ON
+                          1151 +1      
+0193 0A             R     1152 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0194 C200
+                          1153 +1           ; TOKEN_LASER_OFF
+                          1154 +1      
+0196 08             R     1155 +2      TRANSITION_ENTRY< ST_SIGN, OFFSET(      SetSign)>
+0197 7C00
+                          1156 +1              ; TOKEN_SIGN
+                          1157 +1      
+0199 09             R     1158 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+019A 8000
+                          1159 +1             ; TOKEN_DIGIT
+                          1160 +1      
+019C 0A             R     1161 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+019D C200
+                          1162 +1           ; TOKEN_RETURN
+                          1163 +1      
+019F 01             R     1164 +2      TRANSITION_ENTRY< ST_ABS_SPEED, OFFSET( DoNothing)>
+01A0 C900
+                          1165 +1            ; TOKEN_SPACE
+                          1166 +1      
+01A2 0A             R     1167 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01A3 C200
+                          1168 +1           ; TOKEN_OTHER
+                          1169         
+                          1170         ;Current State = ST_REL_SPEED                   Input Token Type   
+                          1171 +1      
+01A5 0A             R     1172 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01A6 C200
+                          1173 +1           ; TOKEN_ABS_SPEED
+                          1174 +1      
+01A8 0A             R     1175 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01A9 C200
+                          1176 +1           ; TOKEN_REL_SPEED
+                          1177 +1      
+01AB 0A             R     1178 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01AC C200
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   23
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1179 +1           ; TOKEN_DIRECTION
+                          1180 +1      
+01AE 0A             R     1181 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01AF C200
+                          1182 +1           ; TOKEN_ROTATE
+                          1183 +1      
+01B1 0A             R     1184 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01B2 C200
+                          1185 +1           ; TOKEN_ELEVATE
+                          1186 +1      
+01B4 0A             R     1187 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01B5 C200
+                          1188 +1           ; TOKEN_LASER_ON
+                          1189 +1      
+01B7 0A             R     1190 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01B8 C200
+                          1191 +1           ; TOKEN_LASER_OFF
+                          1192 +1      
+01BA 08             R     1193 +2      TRANSITION_ENTRY< ST_SIGN, OFFSET(      SetSign)>
+01BB 7C00
+                          1194 +1              ; TOKEN_SIGN
+                          1195 +1      
+01BD 09             R     1196 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+01BE 8000
+                          1197 +1             ; TOKEN_DIGIT
+                          1198 +1      
+01C0 0A             R     1199 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01C1 C200
+                          1200 +1           ; TOKEN_RETURN
+                          1201 +1      
+01C3 02             R     1202 +2      TRANSITION_ENTRY< ST_REL_SPEED, OFFSET( DoNothing)>
+01C4 C900
+                          1203 +1            ; TOKEN_SPACE
+                          1204 +1      
+01C6 0A             R     1205 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01C7 C200
+                          1206 +1           ; TOKEN_OTHER
+                          1207         
+                          1208         ;Current State = ST_DIRECTION                   Input Token Type   
+                          1209 +1      
+01C9 0A             R     1210 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01CA C200
+                          1211 +1           ; TOKEN_ABS_SPEED
+                          1212 +1      
+01CC 0A             R     1213 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01CD C200
+                          1214 +1           ; TOKEN_REL_SPEED
+                          1215 +1      
+01CF 0A             R     1216 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01D0 C200
+                          1217 +1           ; TOKEN_DIRECTION
+                          1218 +1      
+01D2 0A             R     1219 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01D3 C200
+                          1220 +1           ; TOKEN_ROTATE
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   24
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1221 +1      
+01D5 0A             R     1222 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01D6 C200
+                          1223 +1           ; TOKEN_ELEVATE
+                          1224 +1      
+01D8 0A             R     1225 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01D9 C200
+                          1226 +1           ; TOKEN_LASER_ON
+                          1227 +1      
+01DB 0A             R     1228 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01DC C200
+                          1229 +1           ; TOKEN_LASER_OFF
+                          1230 +1      
+01DE 08             R     1231 +2      TRANSITION_ENTRY< ST_SIGN, OFFSET(      SetSign)>
+01DF 7C00
+                          1232 +1              ; TOKEN_SIGN
+                          1233 +1      
+01E1 09             R     1234 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+01E2 8000
+                          1235 +1             ; TOKEN_DIGIT
+                          1236 +1      
+01E4 0A             R     1237 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01E5 C200
+                          1238 +1           ; TOKEN_RETURN
+                          1239 +1      
+01E7 03             R     1240 +2      TRANSITION_ENTRY< ST_DIRECTION, OFFSET( DoNothing)>
+01E8 C900
+                          1241 +1            ; TOKEN_SPACE
+                          1242 +1      
+01EA 0A             R     1243 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01EB C200
+                          1244 +1           ; TOKEN_OTHER
+                          1245         
+                          1246         ;Current State = ST_ROTATE                      Input Token Type   
+                          1247 +1      
+01ED 0A             R     1248 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01EE C200
+                          1249 +1           ; TOKEN_ABS_SPEED
+                          1250 +1      
+01F0 0A             R     1251 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01F1 C200
+                          1252 +1           ; TOKEN_REL_SPEED
+                          1253 +1      
+01F3 0A             R     1254 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01F4 C200
+                          1255 +1           ; TOKEN_DIRECTION
+                          1256 +1      
+01F6 0A             R     1257 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01F7 C200
+                          1258 +1           ; TOKEN_ROTATE
+                          1259 +1      
+01F9 0A             R     1260 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01FA C200
+                          1261 +1           ; TOKEN_ELEVATE
+                          1262 +1      
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   25
+
+
+LOC  OBJ                  LINE     SOURCE
+
+01FC 0A             R     1263 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+01FD C200
+                          1264 +1           ; TOKEN_LASER_ON
+                          1265 +1      
+01FF 0A             R     1266 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0200 C200
+                          1267 +1           ; TOKEN_LASER_OFF
+                          1268 +1      
+0202 08             R     1269 +2      TRANSITION_ENTRY< ST_SIGN, OFFSET(      SetSign)>
+0203 7C00
+                          1270 +1              ; TOKEN_SIGN
+                          1271 +1      
+0205 09             R     1272 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+0206 8000
+                          1273 +1             ; TOKEN_DIGIT
+                          1274 +1      
+0208 0A             R     1275 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0209 C200
+                          1276 +1           ; TOKEN_RETURN
+                          1277 +1      
+020B 04             R     1278 +2      TRANSITION_ENTRY< ST_ROTATE, OFFSET(    DoNothing)>
+020C C900
+                          1279 +1            ; TOKEN_SPACE
+                          1280 +1      
+020E 0A             R     1281 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+020F C200
+                          1282 +1           ; TOKEN_OTHER
+                          1283         
+                          1284         ;Current State = ST_ELEVATE                     Input Token Type   
+                          1285 +1      
+0211 0A             R     1286 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0212 C200
+                          1287 +1           ; TOKEN_ABS_SPEED
+                          1288 +1      
+0214 0A             R     1289 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0215 C200
+                          1290 +1           ; TOKEN_REL_SPEED
+                          1291 +1      
+0217 0A             R     1292 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0218 C200
+                          1293 +1           ; TOKEN_DIRECTION
+                          1294 +1      
+021A 0A             R     1295 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+021B C200
+                          1296 +1           ; TOKEN_ROTATE
+                          1297 +1      
+021D 0A             R     1298 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+021E C200
+                          1299 +1           ; TOKEN_ELEVATE
+                          1300 +1      
+0220 0A             R     1301 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0221 C200
+                          1302 +1           ; TOKEN_LASER_ON
+                          1303 +1      
+0223 0A             R     1304 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   26
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0224 C200
+                          1305 +1           ; TOKEN_LASER_OFF
+                          1306 +1      
+0226 08             R     1307 +2      TRANSITION_ENTRY< ST_SIGN, OFFSET(      SetSign)>
+0227 7C00
+                          1308 +1              ; TOKEN_SIGN
+                          1309 +1      
+0229 09             R     1310 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+022A 8000
+                          1311 +1             ; TOKEN_DIGIT
+                          1312 +1      
+022C 0A             R     1313 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+022D C200
+                          1314 +1           ; TOKEN_RETURN
+                          1315 +1      
+022F 05             R     1316 +2      TRANSITION_ENTRY< ST_ELEVATE, OFFSET(   DoNothing)>
+0230 C900
+                          1317 +1            ; TOKEN_SPACE
+                          1318 +1      
+0232 0A             R     1319 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0233 C200
+                          1320 +1           ; TOKEN_OTHER
+                          1321         
+                          1322         ;Current State = ST_LASER_ON                    Input Token Type   
+                          1323 +1      
+0235 0A             R     1324 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0236 C200
+                          1325 +1           ; TOKEN_ABS_SPEED
+                          1326 +1      
+0238 0A             R     1327 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0239 C200
+                          1328 +1           ; TOKEN_REL_SPEED
+                          1329 +1      
+023B 0A             R     1330 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+023C C200
+                          1331 +1           ; TOKEN_DIRECTION
+                          1332 +1      
+023E 0A             R     1333 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+023F C200
+                          1334 +1           ; TOKEN_ROTATE
+                          1335 +1      
+0241 0A             R     1336 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0242 C200
+                          1337 +1           ; TOKEN_ELEVATE
+                          1338 +1      
+0244 0A             R     1339 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0245 C200
+                          1340 +1           ; TOKEN_LASER_ON
+                          1341 +1      
+0247 0A             R     1342 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0248 C200
+                          1343 +1           ; TOKEN_LASER_OFF
+                          1344 +1      
+024A 0A             R     1345 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+024B C200
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   27
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1346 +1           ; TOKEN_SIGN
+                          1347 +1      
+024D 0A             R     1348 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+024E C200
+                          1349 +1           ; TOKEN_DIGIT
+                          1350 +1      
+0250 0B             R     1351 +2      TRANSITION_ENTRY< ST_END, OFFSET(       CallCommand)>
+0251 B400
+                          1352 +1          ; TOKEN_RETURN
+                          1353 +1      
+0253 06             R     1354 +2      TRANSITION_ENTRY< ST_LASER_ON, OFFSET(  DoNothing)>
+0254 C900
+                          1355 +1            ; TOKEN_SPACE
+                          1356 +1      
+0256 0A             R     1357 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0257 C200
+                          1358 +1           ; TOKEN_OTHER
+                          1359         
+                          1360         ;Current State = ST_LASER_OFF                   Input Token Type   
+                          1361 +1      
+0259 0A             R     1362 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+025A C200
+                          1363 +1           ; TOKEN_ABS_SPEED
+                          1364 +1      
+025C 0A             R     1365 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+025D C200
+                          1366 +1           ; TOKEN_REL_SPEED
+                          1367 +1      
+025F 0A             R     1368 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0260 C200
+                          1369 +1           ; TOKEN_DIRECTION
+                          1370 +1      
+0262 0A             R     1371 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0263 C200
+                          1372 +1           ; TOKEN_ROTATE
+                          1373 +1      
+0265 0A             R     1374 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0266 C200
+                          1375 +1           ; TOKEN_ELEVATE
+                          1376 +1      
+0268 0A             R     1377 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0269 C200
+                          1378 +1           ; TOKEN_LASER_ON
+                          1379 +1      
+026B 0A             R     1380 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+026C C200
+                          1381 +1           ; TOKEN_LASER_OFF
+                          1382 +1      
+026E 0A             R     1383 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+026F C200
+                          1384 +1           ; TOKEN_SIGN
+                          1385 +1      
+0271 0A             R     1386 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0272 C200
+                          1387 +1           ; TOKEN_DIGIT
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   28
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1388 +1      
+0274 0B             R     1389 +2      TRANSITION_ENTRY< ST_END, OFFSET(       CallCommand)>
+0275 B400
+                          1390 +1          ; TOKEN_RETURN
+                          1391 +1      
+0277 07             R     1392 +2      TRANSITION_ENTRY< ST_LASER_OFF, OFFSET( DoNothing)>
+0278 C900
+                          1393 +1            ; TOKEN_SPACE
+                          1394 +1      
+027A 0A             R     1395 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+027B C200
+                          1396 +1           ; TOKEN_OTHER
+                          1397         
+                          1398         ;Current State = ST_SIGN                        Input Token Type   
+                          1399 +1      
+027D 0A             R     1400 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+027E C200
+                          1401 +1           ; TOKEN_ABS_SPEED
+                          1402 +1      
+0280 0A             R     1403 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0281 C200
+                          1404 +1           ; TOKEN_REL_SPEED
+                          1405 +1      
+0283 0A             R     1406 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0284 C200
+                          1407 +1           ; TOKEN_DIRECTION
+                          1408 +1      
+0286 0A             R     1409 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0287 C200
+                          1410 +1           ; TOKEN_ROTATE
+                          1411 +1      
+0289 0A             R     1412 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+028A C200
+                          1413 +1           ; TOKEN_ELEVATE
+                          1414 +1      
+028C 0A             R     1415 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+028D C200
+                          1416 +1           ; TOKEN_LASER_ON
+                          1417 +1      
+028F 0A             R     1418 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0290 C200
+                          1419 +1           ; TOKEN_LASER_OFF
+                          1420 +1      
+0292 0A             R     1421 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0293 C200
+                          1422 +1           ; TOKEN_SIGN
+                          1423 +1      
+0295 09             R     1424 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+0296 8000
+                          1425 +1             ; TOKEN_DIGIT
+                          1426 +1      
+0298 0A             R     1427 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+0299 C200
+                          1428 +1           ; TOKEN_RETURN
+                          1429 +1      
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   29
+
+
+LOC  OBJ                  LINE     SOURCE
+
+029B 08             R     1430 +2      TRANSITION_ENTRY< ST_sign, OFFSET(      DoNothing)>
+029C C900
+                          1431 +1            ; TOKEN_SPACE
+                          1432 +1      
+029E 0A             R     1433 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+029F C200
+                          1434 +1           ; TOKEN_OTHER
+                          1435         
+                          1436         ;Current State = ST_DIGIT                       Input Token Type   
+                          1437 +1      
+02A1 0A             R     1438 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02A2 C200
+                          1439 +1           ; TOKEN_ABS_SPEED
+                          1440 +1      
+02A4 0A             R     1441 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02A5 C200
+                          1442 +1           ; TOKEN_REL_SPEED
+                          1443 +1      
+02A7 0A             R     1444 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02A8 C200
+                          1445 +1           ; TOKEN_DIRECTION
+                          1446 +1      
+02AA 0A             R     1447 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02AB C200
+                          1448 +1           ; TOKEN_ROTATE
+                          1449 +1      
+02AD 0A             R     1450 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02AE C200
+                          1451 +1           ; TOKEN_ELEVATE
+                          1452 +1      
+02B0 0A             R     1453 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02B1 C200
+                          1454 +1           ; TOKEN_LASER_ON
+                          1455 +1      
+02B3 0A             R     1456 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02B4 C200
+                          1457 +1           ; TOKEN_LASER_OFF
+                          1458 +1      
+02B6 0A             R     1459 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02B7 C200
+                          1460 +1           ; TOKEN_SIGN
+                          1461 +1      
+02B9 09             R     1462 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     AddDigit)>
+02BA 8000
+                          1463 +1             ; TOKEN_DIGIT
+                          1464 +1      
+02BC 0B             R     1465 +2      TRANSITION_ENTRY< ST_END, OFFSET(       CallCommand)>
+02BD B400
+                          1466 +1          ; TOKEN_RETURN
+                          1467 +1      
+02BF 09             R     1468 +2      TRANSITION_ENTRY< ST_DIGIT, OFFSET(     DoNothing)>
+02C0 C900
+                          1469 +1            ; TOKEN_SPACE
+                          1470 +1      
+02C2 0A             R     1471 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   30
+
+
+LOC  OBJ                  LINE     SOURCE
+
+02C3 C200
+                          1472 +1           ; TOKEN_OTHER
+                          1473         
+                          1474         ;Current State = ST_ERROR                               Input Token Type
+                          1475 +1      
+02C5 0A             R     1476 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02C6 C200
+                          1477 +1           ; TOKEN_ABS_SPEED
+                          1478 +1      
+02C8 0A             R     1479 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02C9 C200
+                          1480 +1           ; TOKEN_REL_SPEED
+                          1481 +1      
+02CB 0A             R     1482 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02CC C200
+                          1483 +1           ; TOKEN_DIRECTION
+                          1484 +1      
+02CE 0A             R     1485 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02CF C200
+                          1486 +1           ; TOKEN_ROTATE
+                          1487 +1      
+02D1 0A             R     1488 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02D2 C200
+                          1489 +1           ; TOKEN_ELEVATE
+                          1490 +1      
+02D4 0A             R     1491 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02D5 C200
+                          1492 +1           ; TOKEN_LASER_ON
+                          1493 +1      
+02D7 0A             R     1494 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02D8 C200
+                          1495 +1           ; TOKEN_LASER_OFF
+                          1496 +1      
+02DA 0A             R     1497 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02DB C200
+                          1498 +1           ; TOKEN_SIGN
+                          1499 +1      
+02DD 0A             R     1500 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02DE C200
+                          1501 +1           ; TOKEN_DIGIT
+                          1502 +1      
+02E0 0B             R     1503 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02E1 C900
+                          1504 +1            ; TOKEN_RETURN
+                          1505 +1      
+02E3 0A             R     1506 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     DoNothing)>
+02E4 C900
+                          1507 +1            ; TOKEN_SPACE
+                          1508 +1      
+02E6 0A             R     1509 +2      TRANSITION_ENTRY< ST_ERROR, OFFSET(     ThrowError)>
+02E7 C200
+                          1510 +1           ; TOKEN_OTHER
+                          1511         
+                          1512         ;Current State = ST_END                         Input Token Type
+                          1513 +1      
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   31
+
+
+LOC  OBJ                  LINE     SOURCE
+
+02E9 0B             R     1514 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02EA C900
+                          1515 +1            ; TOKEN_ABS_SPEED
+                          1516 +1      
+02EC 0B             R     1517 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02ED C900
+                          1518 +1            ; TOKEN_REL_SPEED
+                          1519 +1      
+02EF 0B             R     1520 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02F0 C900
+                          1521 +1            ; TOKEN_DIRECTION
+                          1522 +1      
+02F2 0B             R     1523 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02F3 C900
+                          1524 +1            ; TOKEN_ROTATE
+                          1525 +1      
+02F5 0B             R     1526 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02F6 C900
+                          1527 +1            ; TOKEN_ELEVATE
+                          1528 +1      
+02F8 0B             R     1529 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02F9 C900
+                          1530 +1            ; TOKEN_LASER_ON
+                          1531 +1      
+02FB 0B             R     1532 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02FC C900
+                          1533 +1            ; TOKEN_LASER_OFF
+                          1534 +1      
+02FE 0B             R     1535 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+02FF C900
+                          1536 +1            ; TOKEN_SIGN
+                          1537 +1      
+0301 0B             R     1538 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+0302 C900
+                          1539 +1            ; TOKEN_DIGIT
+                          1540 +1      
+0304 0B             R     1541 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+0305 C900
+                          1542 +1            ; TOKEN_RETURN
+                          1543 +1      
+0307 0B             R     1544 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+0308 C900
+                          1545 +1            ; TOKEN_SPACE
+                          1546 +1      
+030A 0B             R     1547 +2      TRANSITION_ENTRY< ST_END, OFFSET(       DoNothing)>
+030B C900
+                          1548 +1            ; TOKEN_OTHER
+                          1549         
+                          1550         
+                          1551     ; Token Tables
+                          1552     ;
+                          1553     ; Description:      This creates the tables of token types and token values.
+                          1554     ;                   Each entry corresponds to the token type and the token
+                          1555     ;                   value for a character.  Macros are used to actually build
+                          1556     ;                   two separate tables - TokenTypeTable for token types and
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   32
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1557     ;                   TokenValueTable for token values.
+                          1558     ;
+                          1559     ; Author:           Glen George
+                          1560     ; Last Modified:    Feb. 26, 2003
+                          1561     
+                          1562     
+                          1563     
+                          1564     
+                          1565     ; token type table - uses first byte of macro table entry
+                          1566     
+                          1567     
+030D                      1568     TokenTypeTable  LABEL   BYTE
+                          1569 +1          
+                          1570 +2          
+030D 0B                   1571 +3          DB      TOKEN_OTHER
+                          1572 +2                  ;<null>  (end of string)
+                          1573 +2          
+030E 0B                   1574 +3          DB      TOKEN_OTHER
+                          1575 +2                  ;SOH
+                          1576 +2          
+030F 0B                   1577 +3          DB      TOKEN_OTHER
+                          1578 +2                  ;STX
+                          1579 +2          
+0310 0B                   1580 +3          DB      TOKEN_OTHER
+                          1581 +2                  ;ETX
+                          1582 +2          
+0311 0B                   1583 +3          DB      TOKEN_OTHER
+                          1584 +2                  ;EOT
+                          1585 +2          
+0312 0B                   1586 +3          DB      TOKEN_OTHER
+                          1587 +2                  ;ENQ
+                          1588 +2          
+0313 0B                   1589 +3          DB      TOKEN_OTHER
+                          1590 +2                  ;ACK
+                          1591 +2          
+0314 0B                   1592 +3          DB      TOKEN_OTHER
+                          1593 +2                  ;BEL
+                          1594 +2          
+0315 0B                   1595 +3          DB      TOKEN_OTHER
+                          1596 +2                  ;backspace
+                          1597 +2          
+0316 0A                   1598 +3          DB      TOKEN_SPACE
+                          1599 +2                  ;TAB
+                          1600 +2          
+0317 0B                   1601 +3          DB      TOKEN_OTHER
+                          1602 +2              ;new line
+                          1603 +2          
+0318 0B                   1604 +3          DB      TOKEN_OTHER
+                          1605 +2          ;vertical tab
+                          1606 +2          
+0319 0B                   1607 +3          DB      TOKEN_OTHER
+                          1608 +2          ;form feed
+                          1609 +2          
+031A 09                   1610 +3          DB      TOKEN_RETURN
+                          1611 +2          ;carriage return
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   33
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1612 +2          
+031B 0B                   1613 +3          DB      TOKEN_OTHER
+                          1614 +2          ;SO
+                          1615 +2          
+031C 0B                   1616 +3          DB      TOKEN_OTHER
+                          1617 +2          ;SI
+                          1618 +2          
+031D 0B                   1619 +3          DB      TOKEN_OTHER
+                          1620 +2          ;DLE
+                          1621 +2          
+031E 0B                   1622 +3          DB      TOKEN_OTHER
+                          1623 +2          ;DC1
+                          1624 +2          
+031F 0B                   1625 +3          DB      TOKEN_OTHER
+                          1626 +2          ;DC2
+                          1627 +2          
+0320 0B                   1628 +3          DB      TOKEN_OTHER
+                          1629 +2          ;DC3
+                          1630 +2          
+0321 0B                   1631 +3          DB      TOKEN_OTHER
+                          1632 +2          ;DC4
+                          1633 +2          
+0322 0B                   1634 +3          DB      TOKEN_OTHER
+                          1635 +2          ;NAK
+                          1636 +2          
+0323 0B                   1637 +3          DB      TOKEN_OTHER
+                          1638 +2          ;SYN
+                          1639 +2          
+0324 0B                   1640 +3          DB      TOKEN_OTHER
+                          1641 +2          ;ETB
+                          1642 +2          
+0325 0B                   1643 +3          DB      TOKEN_OTHER
+                          1644 +2          ;CAN
+                          1645 +2          
+0326 0B                   1646 +3          DB      TOKEN_OTHER
+                          1647 +2          ;EM
+                          1648 +2          
+0327 0B                   1649 +3          DB      TOKEN_OTHER
+                          1650 +2          ;SUB
+                          1651 +2          
+0328 0B                   1652 +3          DB      TOKEN_OTHER
+                          1653 +2          ;escape
+                          1654 +2          
+0329 0B                   1655 +3          DB      TOKEN_OTHER
+                          1656 +2          ;FS
+                          1657 +2          
+032A 0B                   1658 +3          DB      TOKEN_OTHER
+                          1659 +2          ;GS
+                          1660 +2          
+032B 0B                   1661 +3          DB      TOKEN_OTHER
+                          1662 +2          ;AS
+                          1663 +2          
+032C 0B                   1664 +3          DB      TOKEN_OTHER
+                          1665 +2          ;US
+                          1666 +2          
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   34
+
+
+LOC  OBJ                  LINE     SOURCE
+
+032D 0A                   1667 +3          DB      TOKEN_SPACE
+                          1668 +2          ;space
+                          1669 +2          
+032E 0B                   1670 +3          DB      TOKEN_OTHER
+                          1671 +2          ;!
+                          1672 +2          
+032F 0B                   1673 +3          DB      TOKEN_OTHER
+                          1674 +2          ;"
+                          1675 +2          
+0330 0B                   1676 +3          DB      TOKEN_OTHER
+                          1677 +2          ;#
+                          1678 +2          
+0331 0B                   1679 +3          DB      TOKEN_OTHER
+                          1680 +2          ;$
+                          1681 +2          
+0332 0B                   1682 +3          DB      TOKEN_OTHER
+                          1683 +2          ;percent
+                          1684 +2          
+0333 0B                   1685 +3          DB      TOKEN_OTHER
+                          1686 +2          ;&
+                          1687 +2          
+0334 0B                   1688 +3          DB      TOKEN_OTHER
+                          1689 +2          ;'
+                          1690 +2          
+0335 0B                   1691 +3          DB      TOKEN_OTHER
+                          1692 +2          ;open paren
+                          1693 +2          
+0336 0B                   1694 +3          DB      TOKEN_OTHER
+                          1695 +2          ;close paren
+                          1696 +2          
+0337 0B                   1697 +3          DB      TOKEN_OTHER
+                          1698 +2          ;*
+                          1699 +2          
+0338 07                   1700 +3          DB      TOKEN_SIGN
+                          1701 +2                  ;+  (positive sign)
+                          1702 +2          
+0339 0B                   1703 +3          DB      TOKEN_OTHER
+                          1704 +2          ;,
+                          1705 +2          
+033A 07                   1706 +3          DB      TOKEN_SIGN
+                          1707 +2                  ;-  (negative sign)
+                          1708 +2          
+033B 0B                   1709 +3          DB      TOKEN_OTHER
+                          1710 +2                  ;.  (decimal point)
+                          1711 +2          
+033C 0B                   1712 +3          DB      TOKEN_OTHER
+                          1713 +2          ;/
+                          1714 +2          
+033D 08                   1715 +3          DB      TOKEN_DIGIT
+                          1716 +2                  ;0  (digit)
+                          1717 +2          
+033E 08                   1718 +3          DB      TOKEN_DIGIT
+                          1719 +2                  ;1  (digit)
+                          1720 +2          
+033F 08                   1721 +3          DB      TOKEN_DIGIT
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   35
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1722 +2                  ;2  (digit)
+                          1723 +2          
+0340 08                   1724 +3          DB      TOKEN_DIGIT
+                          1725 +2                  ;3  (digit)
+                          1726 +2          
+0341 08                   1727 +3          DB      TOKEN_DIGIT
+                          1728 +2                  ;4  (digit)
+                          1729 +2          
+0342 08                   1730 +3          DB      TOKEN_DIGIT
+                          1731 +2                  ;5  (digit)
+                          1732 +2          
+0343 08                   1733 +3          DB      TOKEN_DIGIT
+                          1734 +2                  ;6  (digit)
+                          1735 +2          
+0344 08                   1736 +3          DB      TOKEN_DIGIT
+                          1737 +2                  ;7  (digit)
+                          1738 +2          
+0345 08                   1739 +3          DB      TOKEN_DIGIT
+                          1740 +2                  ;8  (digit)
+                          1741 +2          
+0346 08                   1742 +3          DB      TOKEN_DIGIT
+                          1743 +2                  ;9  (digit)
+                          1744 +2          
+0347 0B                   1745 +3          DB      TOKEN_OTHER
+                          1746 +2          ;:
+                          1747 +2          
+0348 0B                   1748 +3          DB      TOKEN_OTHER
+                          1749 +2          ;;
+                          1750 +2          
+0349 0B                   1751 +3          DB      TOKEN_OTHER
+                          1752 +2          ;<
+                          1753 +2          
+034A 0B                   1754 +3          DB      TOKEN_OTHER
+                          1755 +2          ;=
+                          1756 +2          
+034B 0B                   1757 +3          DB      TOKEN_OTHER
+                          1758 +2          ;>
+                          1759 +2          
+034C 0B                   1760 +3          DB      TOKEN_OTHER
+                          1761 +2          ;?
+                          1762 +2          
+034D 0B                   1763 +3          DB      TOKEN_OTHER
+                          1764 +2          ;@
+                          1765 +2          
+034E 0B                   1766 +3          DB      TOKEN_OTHER
+                          1767 +2          ;A
+                          1768 +2          
+034F 0B                   1769 +3          DB      TOKEN_OTHER
+                          1770 +2          ;B
+                          1771 +2          
+0350 0B                   1772 +3          DB      TOKEN_OTHER
+                          1773 +2          ;C
+                          1774 +2          
+0351 02                   1775 +3          DB      TOKEN_DIRECTION
+                          1776 +2          ;D, is actually a function index for set direction
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   36
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1777 +2          
+0352 04                   1778 +3          DB      TOKEN_ELEVATE
+                          1779 +2     ;E, is actually a function index for set elevation
+                          1780 +2          
+0353 05                   1781 +3          DB      TOKEN_LASER_ON
+                          1782 +2     ;F, is actually the on state for setting laser on
+                          1783 +2          
+0354 0B                   1784 +3          DB      TOKEN_OTHER
+                          1785 +2          ;G
+                          1786 +2          
+0355 0B                   1787 +3          DB      TOKEN_OTHER
+                          1788 +2          ;H
+                          1789 +2          
+0356 0B                   1790 +3          DB      TOKEN_OTHER
+                          1791 +2          ;I
+                          1792 +2          
+0357 0B                   1793 +3          DB      TOKEN_OTHER
+                          1794 +2          ;J
+                          1795 +2          
+0358 0B                   1796 +3          DB      TOKEN_OTHER
+                          1797 +2          ;K
+                          1798 +2          
+0359 0B                   1799 +3          DB      TOKEN_OTHER
+                          1800 +2          ;L
+                          1801 +2          
+035A 0B                   1802 +3          DB      TOKEN_OTHER
+                          1803 +2          ;M
+                          1804 +2          
+035B 0B                   1805 +3          DB      TOKEN_OTHER
+                          1806 +2          ;N
+                          1807 +2          
+035C 06                   1808 +3          DB      TOKEN_LASER_OFF
+                          1809 +2   ;O, is actually the off state for the laser
+                          1810 +2          
+035D 0B                   1811 +3          DB      TOKEN_OTHER
+                          1812 +2          ;P
+                          1813 +2          
+035E 0B                   1814 +3          DB      TOKEN_OTHER
+                          1815 +2          ;Q
+                          1816 +2          
+035F 0B                   1817 +3          DB      TOKEN_OTHER
+                          1818 +2          ;R
+                          1819 +2          
+0360 00                   1820 +3          DB      TOKEN_ABS_SPEED
+                          1821 +2          ;S, is actually a function index for setting absolute speed
+                          1822 +2          
+0361 03                   1823 +3          DB      TOKEN_ROTATE
+                          1824 +2                  ;T
+                          1825 +2          
+0362 0B                   1826 +3          DB      TOKEN_OTHER
+                          1827 +2          ;U
+                          1828 +2          
+0363 01                   1829 +3          DB      TOKEN_REL_SPEED
+                          1830 +2          ;V, is actually a function index for setting relative speed
+                          1831 +2          
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   37
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0364 0B                   1832 +3          DB      TOKEN_OTHER
+                          1833 +2          ;W
+                          1834 +2          
+0365 0B                   1835 +3          DB      TOKEN_OTHER
+                          1836 +2          ;X
+                          1837 +2          
+0366 0B                   1838 +3          DB      TOKEN_OTHER
+                          1839 +2          ;Y
+                          1840 +2          
+0367 0B                   1841 +3          DB      TOKEN_OTHER
+                          1842 +2          ;Z
+                          1843 +2          
+0368 0B                   1844 +3          DB      TOKEN_OTHER
+                          1845 +2          ;[
+                          1846 +2          
+0369 0B                   1847 +3          DB      TOKEN_OTHER
+                          1848 +2          ;\
+                          1849 +2          
+036A 0B                   1850 +3          DB      TOKEN_OTHER
+                          1851 +2          ;]
+                          1852 +2          
+036B 0B                   1853 +3          DB      TOKEN_OTHER
+                          1854 +2          ;^
+                          1855 +2          
+036C 0B                   1856 +3          DB      TOKEN_OTHER
+                          1857 +2          ;_
+                          1858 +2          
+036D 0B                   1859 +3          DB      TOKEN_OTHER
+                          1860 +2          ;`
+                          1861 +2          
+036E 0B                   1862 +3          DB      TOKEN_OTHER
+                          1863 +2          ;a
+                          1864 +2          
+036F 0B                   1865 +3          DB      TOKEN_OTHER
+                          1866 +2          ;b
+                          1867 +2          
+0370 0B                   1868 +3          DB      TOKEN_OTHER
+                          1869 +2          ;c
+                          1870 +2          
+0371 02                   1871 +3          DB      TOKEN_DIRECTION
+                          1872 +2   ;d, is actually a function index for set direction
+                          1873 +2          
+0372 04                   1874 +3          DB      TOKEN_ELEVATE
+                          1875 +2     ;e, is actually a function index for set elevation
+                          1876 +2          
+0373 05                   1877 +3          DB      TOKEN_LASER_ON
+                          1878 +2     ;f, is actually the on state for setting laser on
+                          1879 +2          
+0374 0B                   1880 +3          DB      TOKEN_OTHER
+                          1881 +2          ;g
+                          1882 +2          
+0375 0B                   1883 +3          DB      TOKEN_OTHER
+                          1884 +2          ;h
+                          1885 +2          
+0376 0B                   1886 +3          DB      TOKEN_OTHER
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   38
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1887 +2          ;i
+                          1888 +2          
+0377 0B                   1889 +3          DB      TOKEN_OTHER
+                          1890 +2          ;j
+                          1891 +2          
+0378 0B                   1892 +3          DB      TOKEN_OTHER
+                          1893 +2          ;k
+                          1894 +2          
+0379 0B                   1895 +3          DB      TOKEN_OTHER
+                          1896 +2          ;l
+                          1897 +2          
+037A 0B                   1898 +3          DB      TOKEN_OTHER
+                          1899 +2          ;m
+                          1900 +2          
+037B 0B                   1901 +3          DB      TOKEN_OTHER
+                          1902 +2          ;n
+                          1903 +2          
+037C 06                   1904 +3          DB      TOKEN_LASER_OFF
+                          1905 +2                  ;o, is actually the off state for the laser
+                          1906 +2          
+037D 0B                   1907 +3          DB      TOKEN_OTHER
+                          1908 +2          ;p
+                          1909 +2          
+037E 0B                   1910 +3          DB      TOKEN_OTHER
+                          1911 +2          ;q
+                          1912 +2          
+037F 0B                   1913 +3          DB      TOKEN_OTHER
+                          1914 +2          ;r
+                          1915 +2          
+0380 00                   1916 +3          DB      TOKEN_ABS_SPEED
+                          1917 +2          ;s, is actually a function index for setting absolute speed
+                          1918 +2          
+0381 03                   1919 +3          DB      TOKEN_ROTATE
+                          1920 +2                  ;t
+                          1921 +2          
+0382 0B                   1922 +3          DB      TOKEN_OTHER
+                          1923 +2          ;u
+                          1924 +2          
+0383 01                   1925 +3          DB      TOKEN_REL_SPEED
+                          1926 +2          ;v, is actually a function index for setting relative speed
+                          1927 +2          
+0384 0B                   1928 +3          DB      TOKEN_OTHER
+                          1929 +2          ;w
+                          1930 +2          
+0385 0B                   1931 +3          DB      TOKEN_OTHER
+                          1932 +2          ;x
+                          1933 +2          
+0386 0B                   1934 +3          DB      TOKEN_OTHER
+                          1935 +2          ;y
+                          1936 +2          
+0387 0B                   1937 +3          DB      TOKEN_OTHER
+                          1938 +2          ;z
+                          1939 +2          
+0388 0B                   1940 +3          DB      TOKEN_OTHER
+                          1941 +2          ;{
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   39
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1942 +2          
+0389 0B                   1943 +3          DB      TOKEN_OTHER
+                          1944 +2          ;|
+                          1945 +2          
+038A 0B                   1946 +3          DB      TOKEN_OTHER
+                          1947 +2          ;}
+                          1948 +2          
+038B 0B                   1949 +3          DB      TOKEN_OTHER
+                          1950 +2          ;~
+                          1951 +2          
+038C 0B                   1952 +3          DB      TOKEN_OTHER
+                          1953 +2          ;rubout
+                          1954 +1  
+                          1955     
+                          1956     ; token value table - uses second byte of macro table entry
+                          1957     
+                          1958     
+038D                      1959     TokenValueTable LABEL       BYTE
+                          1960 +1          
+                          1961 +2          
+038D 00                   1962 +3          DB       0
+                          1963 +2                  ;<null>  (end of string)
+                          1964 +2          
+038E 01                   1965 +3          DB       1
+                          1966 +2                  ;SOH
+                          1967 +2          
+038F 02                   1968 +3          DB       2
+                          1969 +2                  ;STX
+                          1970 +2          
+0390 03                   1971 +3          DB       3
+                          1972 +2                  ;ETX
+                          1973 +2          
+0391 04                   1974 +3          DB       4
+                          1975 +2                  ;EOT
+                          1976 +2          
+0392 05                   1977 +3          DB       5
+                          1978 +2                  ;ENQ
+                          1979 +2          
+0393 06                   1980 +3          DB       6
+                          1981 +2                  ;ACK
+                          1982 +2          
+0394 07                   1983 +3          DB       7
+                          1984 +2                  ;BEL
+                          1985 +2          
+0395 08                   1986 +3          DB       8
+                          1987 +2                  ;backspace
+                          1988 +2          
+0396 09                   1989 +3          DB       9
+                          1990 +2                  ;TAB
+                          1991 +2          
+0397 0A                   1992 +3          DB       10
+                          1993 +2              ;new line
+                          1994 +2          
+0398 0B                   1995 +3          DB       11
+                          1996 +2          ;vertical tab
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   40
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          1997 +2          
+0399 0C                   1998 +3          DB       12
+                          1999 +2          ;form feed
+                          2000 +2          
+039A 0D                   2001 +3          DB       13
+                          2002 +2          ;carriage return
+                          2003 +2          
+039B 0E                   2004 +3          DB       14
+                          2005 +2          ;SO
+                          2006 +2          
+039C 0F                   2007 +3          DB       15
+                          2008 +2          ;SI
+                          2009 +2          
+039D 10                   2010 +3          DB       16
+                          2011 +2          ;DLE
+                          2012 +2          
+039E 11                   2013 +3          DB       17
+                          2014 +2          ;DC1
+                          2015 +2          
+039F 12                   2016 +3          DB       18
+                          2017 +2          ;DC2
+                          2018 +2          
+03A0 13                   2019 +3          DB       19
+                          2020 +2          ;DC3
+                          2021 +2          
+03A1 14                   2022 +3          DB       20
+                          2023 +2          ;DC4
+                          2024 +2          
+03A2 15                   2025 +3          DB       21
+                          2026 +2          ;NAK
+                          2027 +2          
+03A3 16                   2028 +3          DB       22
+                          2029 +2          ;SYN
+                          2030 +2          
+03A4 17                   2031 +3          DB       23
+                          2032 +2          ;ETB
+                          2033 +2          
+03A5 18                   2034 +3          DB       24
+                          2035 +2          ;CAN
+                          2036 +2          
+03A6 19                   2037 +3          DB       25
+                          2038 +2          ;EM
+                          2039 +2          
+03A7 1A                   2040 +3          DB       26
+                          2041 +2          ;SUB
+                          2042 +2          
+03A8 1B                   2043 +3          DB       27
+                          2044 +2          ;escape
+                          2045 +2          
+03A9 1C                   2046 +3          DB       28
+                          2047 +2          ;FS
+                          2048 +2          
+03AA 1D                   2049 +3          DB       29
+                          2050 +2          ;GS
+                          2051 +2          
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   41
+
+
+LOC  OBJ                  LINE     SOURCE
+
+03AB 1E                   2052 +3          DB       30
+                          2053 +2          ;AS
+                          2054 +2          
+03AC 1F                   2055 +3          DB       31
+                          2056 +2          ;US
+                          2057 +2          
+03AD 20                   2058 +3          DB       ' '
+                          2059 +2          ;space
+                          2060 +2          
+03AE 21                   2061 +3          DB       '!'
+                          2062 +2          ;!
+                          2063 +2          
+03AF 22                   2064 +3          DB       '"'
+                          2065 +2          ;"
+                          2066 +2          
+03B0 23                   2067 +3          DB       '#'
+                          2068 +2          ;#
+                          2069 +2          
+03B1 24                   2070 +3          DB       '$'
+                          2071 +2          ;$
+                          2072 +2          
+03B2 25                   2073 +3          DB       37
+                          2074 +2          ;percent
+                          2075 +2          
+03B3 26                   2076 +3          DB       '&'
+                          2077 +2          ;&
+                          2078 +2          
+03B4 27                   2079 +3          DB       39
+                          2080 +2          ;'
+                          2081 +2          
+03B5 28                   2082 +3          DB       40
+                          2083 +2          ;open paren
+                          2084 +2          
+03B6 29                   2085 +3          DB       41
+                          2086 +2          ;close paren
+                          2087 +2          
+03B7 2A                   2088 +3          DB       '*'
+                          2089 +2          ;*
+                          2090 +2          
+03B8 01                   2091 +3          DB       POSITIVE
+                          2092 +2                  ;+  (positive sign)
+                          2093 +2          
+03B9 2C                   2094 +3          DB       44
+                          2095 +2          ;,
+                          2096 +2          
+03BA FF                   2097 +3          DB       NEGATIVE
+                          2098 +2                  ;-  (negative sign)
+                          2099 +2          
+03BB 00                   2100 +3          DB       0
+                          2101 +2                  ;.  (decimal point)
+                          2102 +2          
+03BC 2F                   2103 +3          DB       '/'
+                          2104 +2          ;/
+                          2105 +2          
+03BD 00                   2106 +3          DB       0
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   42
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          2107 +2                  ;0  (digit)
+                          2108 +2          
+03BE 01                   2109 +3          DB       1
+                          2110 +2                  ;1  (digit)
+                          2111 +2          
+03BF 02                   2112 +3          DB       2
+                          2113 +2                  ;2  (digit)
+                          2114 +2          
+03C0 03                   2115 +3          DB       3
+                          2116 +2                  ;3  (digit)
+                          2117 +2          
+03C1 04                   2118 +3          DB       4
+                          2119 +2                  ;4  (digit)
+                          2120 +2          
+03C2 05                   2121 +3          DB       5
+                          2122 +2                  ;5  (digit)
+                          2123 +2          
+03C3 06                   2124 +3          DB       6
+                          2125 +2                  ;6  (digit)
+                          2126 +2          
+03C4 07                   2127 +3          DB       7
+                          2128 +2                  ;7  (digit)
+                          2129 +2          
+03C5 08                   2130 +3          DB       8
+                          2131 +2                  ;8  (digit)
+                          2132 +2          
+03C6 09                   2133 +3          DB       9
+                          2134 +2                  ;9  (digit)
+                          2135 +2          
+03C7 3A                   2136 +3          DB       ':'
+                          2137 +2          ;:
+                          2138 +2          
+03C8 3B                   2139 +3          DB       ';'
+                          2140 +2          ;;
+                          2141 +2          
+03C9 3C                   2142 +3          DB       '<'
+                          2143 +2          ;<
+                          2144 +2          
+03CA 3D                   2145 +3          DB       '='
+                          2146 +2          ;=
+                          2147 +2          
+03CB 3E                   2148 +3          DB       '>'
+                          2149 +2          ;>
+                          2150 +2          
+03CC 3F                   2151 +3          DB       '?'
+                          2152 +2          ;?
+                          2153 +2          
+03CD 40                   2154 +3          DB       '@'
+                          2155 +2          ;@
+                          2156 +2          
+03CE 41                   2157 +3          DB       'A'
+                          2158 +2          ;A
+                          2159 +2          
+03CF 42                   2160 +3          DB       'B'
+                          2161 +2          ;B
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   43
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          2162 +2          
+03D0 43                   2163 +3          DB       'C'
+                          2164 +2          ;C
+                          2165 +2          
+03D1 02                   2166 +3          DB       SET_DIRECTION
+                          2167 +2          ;D, is actually a function index for set direction
+                          2168 +2          
+03D2 04                   2169 +3          DB       SET_ELEVATION
+                          2170 +2     ;E, is actually a function index for set elevation
+                          2171 +2          
+03D3 05                   2172 +3          DB       SET_LASER_ON
+                          2173 +2     ;F, is actually the on state for setting laser on
+                          2174 +2          
+03D4 47                   2175 +3          DB       'G'
+                          2176 +2          ;G
+                          2177 +2          
+03D5 48                   2178 +3          DB       'H'
+                          2179 +2          ;H
+                          2180 +2          
+03D6 49                   2181 +3          DB       'I'
+                          2182 +2          ;I
+                          2183 +2          
+03D7 4A                   2184 +3          DB       'J'
+                          2185 +2          ;J
+                          2186 +2          
+03D8 4B                   2187 +3          DB       'K'
+                          2188 +2          ;K
+                          2189 +2          
+03D9 4C                   2190 +3          DB       'L'
+                          2191 +2          ;L
+                          2192 +2          
+03DA 4D                   2193 +3          DB       'M'
+                          2194 +2          ;M
+                          2195 +2          
+03DB 4E                   2196 +3          DB       'N'
+                          2197 +2          ;N
+                          2198 +2          
+03DC 06                   2199 +3          DB       SET_LASER_OFF
+                          2200 +2   ;O, is actually the off state for the laser
+                          2201 +2          
+03DD 50                   2202 +3          DB       'P'
+                          2203 +2          ;P
+                          2204 +2          
+03DE 51                   2205 +3          DB       'Q'
+                          2206 +2          ;Q
+                          2207 +2          
+03DF 52                   2208 +3          DB       'R'
+                          2209 +2          ;R
+                          2210 +2          
+03E0 00                   2211 +3          DB       SET_ABS_SPEED
+                          2212 +2          ;S, is actually a function index for setting absolute speed
+                          2213 +2          
+03E1 03                   2214 +3          DB       ROTATE
+                          2215 +2                  ;T
+                          2216 +2          
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   44
+
+
+LOC  OBJ                  LINE     SOURCE
+
+03E2 55                   2217 +3          DB       'U'
+                          2218 +2          ;U
+                          2219 +2          
+03E3 01                   2220 +3          DB       SET_REL_SPEED
+                          2221 +2          ;V, is actually a function index for setting relative speed
+                          2222 +2          
+03E4 57                   2223 +3          DB       'W'
+                          2224 +2          ;W
+                          2225 +2          
+03E5 58                   2226 +3          DB       'X'
+                          2227 +2          ;X
+                          2228 +2          
+03E6 59                   2229 +3          DB       'Y'
+                          2230 +2          ;Y
+                          2231 +2          
+03E7 5A                   2232 +3          DB       'Z'
+                          2233 +2          ;Z
+                          2234 +2          
+03E8 5B                   2235 +3          DB       '['
+                          2236 +2          ;[
+                          2237 +2          
+03E9 5C                   2238 +3          DB       '\'
+                          2239 +2          ;\
+                          2240 +2          
+03EA 5D                   2241 +3          DB       ']'
+                          2242 +2          ;]
+                          2243 +2          
+03EB 5E                   2244 +3          DB       '^'
+                          2245 +2          ;^
+                          2246 +2          
+03EC 5F                   2247 +3          DB       '_'
+                          2248 +2          ;_
+                          2249 +2          
+03ED 60                   2250 +3          DB       '`'
+                          2251 +2          ;`
+                          2252 +2          
+03EE 61                   2253 +3          DB       'a'
+                          2254 +2          ;a
+                          2255 +2          
+03EF 62                   2256 +3          DB       'b'
+                          2257 +2          ;b
+                          2258 +2          
+03F0 63                   2259 +3          DB       'c'
+                          2260 +2          ;c
+                          2261 +2          
+03F1 02                   2262 +3          DB       SET_DIRECTION
+                          2263 +2   ;d, is actually a function index for set direction
+                          2264 +2          
+03F2 04                   2265 +3          DB       SET_ELEVATION
+                          2266 +2     ;e, is actually a function index for set elevation
+                          2267 +2          
+03F3 05                   2268 +3          DB       SET_LASER_ON
+                          2269 +2     ;f, is actually the on state for setting laser on
+                          2270 +2          
+03F4 67                   2271 +3          DB       'g'
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   45
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          2272 +2          ;g
+                          2273 +2          
+03F5 68                   2274 +3          DB       'h'
+                          2275 +2          ;h
+                          2276 +2          
+03F6 69                   2277 +3          DB       'i'
+                          2278 +2          ;i
+                          2279 +2          
+03F7 6A                   2280 +3          DB       'j'
+                          2281 +2          ;j
+                          2282 +2          
+03F8 6B                   2283 +3          DB       'k'
+                          2284 +2          ;k
+                          2285 +2          
+03F9 6C                   2286 +3          DB       'l'
+                          2287 +2          ;l
+                          2288 +2          
+03FA 6D                   2289 +3          DB       'm'
+                          2290 +2          ;m
+                          2291 +2          
+03FB 6E                   2292 +3          DB       'n'
+                          2293 +2          ;n
+                          2294 +2          
+03FC 06                   2295 +3          DB       SET_LASER_OFF
+                          2296 +2                  ;o, is actually the off state for the laser
+                          2297 +2          
+03FD 70                   2298 +3          DB       'p'
+                          2299 +2          ;p
+                          2300 +2          
+03FE 71                   2301 +3          DB       'q'
+                          2302 +2          ;q
+                          2303 +2          
+03FF 72                   2304 +3          DB       'r'
+                          2305 +2          ;r
+                          2306 +2          
+0400 00                   2307 +3          DB       SET_ABS_SPEED
+                          2308 +2          ;s, is actually a function index for setting absolute speed
+                          2309 +2          
+0401 03                   2310 +3          DB       ROTATE
+                          2311 +2                  ;t
+                          2312 +2          
+0402 75                   2313 +3          DB       'u'
+                          2314 +2          ;u
+                          2315 +2          
+0403 01                   2316 +3          DB       SET_REL_SPEED
+                          2317 +2          ;v, is actually a function index for setting relative speed
+                          2318 +2          
+0404 77                   2319 +3          DB       'w'
+                          2320 +2          ;w
+                          2321 +2          
+0405 78                   2322 +3          DB       'x'
+                          2323 +2          ;x
+                          2324 +2          
+0406 79                   2325 +3          DB       'y'
+                          2326 +2          ;y
+8086/87/88/186 MACRO ASSEMBLER    PARSER                                                   20:25:09  01/07/;6  PAGE   46
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                          2327 +2          
+0407 7A                   2328 +3          DB       'z'
+                          2329 +2          ;z
+                          2330 +2          
+0408 7B                   2331 +3          DB       '{'
+                          2332 +2          ;{
+                          2333 +2          
+0409 7C                   2334 +3          DB       '|'
+                          2335 +2          ;|
+                          2336 +2          
+040A 7D                   2337 +3          DB       '}'
+                          2338 +2          ;}
+                          2339 +2          
+040B 7E                   2340 +3          DB       '~'
+                          2341 +2          ;~
+                          2342 +2          
+040C 7F                   2343 +3          DB       127
+                          2344 +2          ;rubout
+                          2345 +1  
+                          2346         
+----                      2347     CODE ENDS    
+                          2348                
+                          2349     ;the data segment
+                          2350     
+----                      2351     DATA    SEGMENT PUBLIC  'DATA'
+                          2352     
+0000 ??                   2353     curCommand     DB    ?  ; the current command being parsed from the serial
+0001 ??                   2354     curSign        DB    ?  ; the sign of the number
+0002 ????                 2355     curNumber      DW    ?  ; the number to apply to the command
+0004 ??                   2356     curState       DB    ?  ; the current state of the parser
+0005 ??                   2357     curError       DB    ?  ; the current error of the parser
+                          2358     
+----                      2359     DATA    ENDS
+                          2360     
+                          2361     END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND

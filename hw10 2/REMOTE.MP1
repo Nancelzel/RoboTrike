@@ -1,0 +1,23 @@
+
+DOS 5.0 (038-N) 8086 LINKER, V2.7
+
+INPUT FILES: REMOTEP2.OBJ, FORCE.OBJ, TRIG.OBJ, FLAGS.OBJ
+OUTPUT FILE: REMOTE.LNK
+CONTROLS SPECIFIED IN INVOCATION COMMAND:
+DATE:  01/05/;6  TIME:  17:22:38
+
+
+LINK MAP OF MODULE REMOTE
+
+LOGICAL SEGMENTS INCLUDED:
+LENGTH ADDRESS ALIGN  SEGMENT         CLASS           OVERLAY
+ 0000H ------    G    ??SEG                                         
+ 0FA6H ------    G    CODE            CODE                          
+ 0256H ------    G    DATA            DATA                          
+ 01E0H ------    G    STACK           STACK                         
+
+INPUT MODULES INCLUDED:
+REMOTEP2.OBJ(REMOTE)
+FORCE.OBJ(FORCE_VECTORS)
+TRIG.OBJ(TRIG_TABLE)
+FLAGS.OBJ(FLAGS)

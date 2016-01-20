@@ -1,0 +1,274 @@
+8086/87/88/186 MACRO ASSEMBLER    EVENTQ                                                   20:25:03  01/07/;6  PAGE    1
+
+
+DOS 5.0 (038-N) 8086/87/88/186 MACRO ASSEMBLER V3.1 ASSEMBLY OF MODULE EVENTQ
+OBJECT MODULE PLACED IN EVENTQ.OBJ
+ASSEMBLER INVOKED BY:  C:\UTIL\ASM86.EXE EVENTQ.ASM M1 EP DB
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                             1     NAME    EVENTQ
+                             2     
+                             3     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                             4     ;                                                                            ;
+                             5     ;                                 EventQueue                                 ;
+                             6     ;                       RoboTrike EventQueue Functions                       ;
+                             7     ;                                  EE/CS 51                                  ;
+                             8     ;                                                                            ;
+                             9     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                            10     
+                            11     ; Description:       This program includes the event queue functions used
+                            12     ;                    by the RoboTrike. The public functions included are:
+                            13     ;                        InitEventQueue     - initializes the event queue
+                            14     ;                                             (public)
+                            15     ;                        EnqueueEvent       - enqueues an event (public)
+                            16     ;                        DequeueEvent       - dequeues an event (public)
+                            17     ;                        
+                            18     ;
+                            19     ; Revision History:
+                            20     ;     12/01/15  Nancy Cao         initial comments and pseudocode
+                            21     ;     12/25/15  Nancy Cao         initial code and updated comments
+                            22     
+                            23     ; local include files
+                            24 +1  $INCLUDE(QUEUE.INC)         ; queue constants used for the queue
+                      =1    25     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    26     ;                                                                            ;
+                      =1    27     ;                                   QUEUE.INC                                ;
+                      =1    28     ;                               Queue Definitions                            ;
+                      =1    29     ;                                  Include File                              ;
+                      =1    30     ;                                                                            ;
+                      =1    31     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                      =1    32     
+                      =1    33     ; This file contains the definitions for the queue functions.
+                      =1    34     ;
+                      =1    35     ; Revision History:
+                      =1    36     ;     10/24/15  Nancy Cao      initial revision
+                      =1    37     
+                      =1    38     ; definitions
+  00FF                =1    39     LENGTH_TEST   EQU 255               ; length of the queue
+                      =1    40     
+                      =1    41     ; Queue structure
+                      =1    42     
+----                  =1    43     QUEUE         STRUC
+0000                  =1    44         headPtr   DB ?                  ; index of head/first element of queue
+0001                  =1    45             tailPtr   DB ?                  ; index of tail/last element of queue
+0002                  =1    46             len       DW ?                  ; length of queue in bytes
+0004                  =1    47             s         DB ?                  ; size of elements in queue (1 or 2 bytes)
+0005                  =1    48             array1Ds  DB 256 DUP (?)        ; 1D array designed to hold max 256 bytes
+----                  =1    49     QUEUE         ENDS
+                            50     
+8086/87/88/186 MACRO ASSEMBLER    EVENTQ                                                   20:25:03  01/07/;6  PAGE    2
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                            51     EXTRN QueueInit:NEAR        ; used to initialize the queue, set the head and the
+                            52                                 ; tail at appropriate locations
+                            53     EXTRN QueueEmpty:NEAR       ; used to check if the queue is empty
+                            54     EXTRN QueueFull:NEAR        ; used to check if the queue is full
+                            55     EXTRN Dequeue:NEAR          ; used to remove an element from the queue and return
+                            56                                 ; that element if the queue is not already empty
+                            57     EXTRN Enqueue:NEAR          ; used to put an element into the queue if the queue
+                            58                                 ; is not already full
+                            59     EXTRN SetCriticalError:NEAR ; sets a critical error
+                            60                               
+                            61     
+                            62     
+                            63     CGROUP  GROUP   CODE
+                            64     DGROUP  GROUP   DATA
+                            65     
+----                        66     CODE    SEGMENT PUBLIC 'CODE'
+                            67     
+                            68     
+                            69             ASSUME  CS:CGROUP, DS:DGROUP
+                            70     
+                            71     ; InitEventQueue
+                            72     ; 
+                            73     ; Description: This function initializes the event queue. The address, type of
+                            74     ;              event queue (byte or word), and length of the queue is
+                            75     ;              initialized.
+                            76     ;
+                            77     ; Operation:   This function sets the address to be the address of the event
+                            78     ;              queue. It sets the event queue to be of type word, and the length
+                            79     ;              of the queue to be LENGTH_TEST. The event queue is initialized
+                            80     ;              by calling the QueueInit.
+                            81     ;
+                            82     ; Arguments:        None.
+                            83     ; Return Value:     None.
+                            84     ; Local Variables:  None.
+                            85     ; Shared Variables: q - the event queue (DS, W)
+                            86     ; Global Variables: None.
+                            87     ;
+                            88     ; Input: None.
+                            89     ; Output: None.
+                            90     ;
+                            91     ; Error Handling: None.
+                            92     ;
+                            93     ; Limitations: None.
+                            94     ;
+                            95     ; Algorithms: None.
+                            96     ; Data Structures: None.
+                            97     ;
+                            98     ; Registers Changed: SI, BX, CX
+                            99     ;
+                           100     ; Author: Nancy Cao
+                           101     ; Revision History:
+                           102     ;     12/25/15  Nancy Cao        initial code and comments
+                           103     ;
+                           104     
+0000                       105     InitEventQueue          PROC        NEAR
+8086/87/88/186 MACRO ASSEMBLER    EVENTQ                                                   20:25:03  01/07/;6  PAGE    3
+
+
+LOC  OBJ                  LINE     SOURCE
+
+                           106                             PUBLIC      InitEventQueue
+                           107     
+0000 BE000090       R      108         MOV     SI, OFFSET(q)           ; pass in address of q at DS:SI
+0004 BB0100                109         MOV     BX, 1                   ; make event queue a word queue
+0007 B9FF00                110         MOV     CX, LENGTH_TEST         ; pass in length of event queue
+000A E80000         E      111         CALL    QueueInit               ; initialize q event queue
+                           112     
+000D C3                    113         RET
+                           114         
+                           115     InitEventQueue    ENDP
+                           116     
+                           117     ; EnqueueEvent
+                           118     ;
+                           119     ; Description:       This function enqueues the next event to the event queue
+                           120     ;                    if the event queue is not yet full. If it is full, a
+                           121     ;                    critical error is set instead.
+                           122     ;
+                           123     ; Operation:         The function first checks if the event queue is full. If
+                           124     ;                    it is, a critical error is set, and the function returns
+                           125     ;                    without enqueuing the event. Otherwise, the event is
+                           126     ;                    enqueued before the function returns.
+                           127     ;
+                           128     ; Arguments:         eventValue (AL) - the event value
+                           129     ;                    eventType  (AH) - the event type
+                           130     ; Return Value:      None.
+                           131     ;
+                           132     ; Local Variables:   None.
+                           133     ; Shared Variables:  q - the event queue (DS, R/W)
+                           134     ; Global Variables:  None.
+                           135     ;
+                           136     ; Input:             None.
+                           137     ; Output:            None.
+                           138     ;
+                           139     ; Error Handling:    None.
+                           140     ;
+                           141     ; Algorithms:        None.
+                           142     ; Data Structures:   Queue.
+                           143     ;
+                           144     ; Registers Changed: Zero flag, SI
+                           145     ;
+                           146     ; Author:            Nancy Cao
+                           147     ; Revision History:
+                           148     ;     12/25/15  Nancy Cao   initial code and comments
+                           149     
+000E                       150     EnqueueEvent     PROC        NEAR
+                           151                      PUBLIC      EnqueueEvent
+                           152     
+000E                       153     FullQueue:                  ; check if the event queue is full
+000E BE000090       R      154         MOV    SI, OFFSET(q)    ; get the address of the event queue
+0012 E80000         E      155         CALL   QueueFull        ; check if the event queue is full
+0015 7402                  156         JZ     CriticalError    ; if zero flag is set event queue is full, must
+                           157                                 ; set critical error
+0017 7506                  158         JNZ    AddEvent         ; otherwise go ahead and enqueue the event
+                           159         
+0019                       160     CriticalError:              ; set a critical error because of full event queue
+8086/87/88/186 MACRO ASSEMBLER    EVENTQ                                                   20:25:03  01/07/;6  PAGE    4
+
+
+LOC  OBJ                  LINE     SOURCE
+
+0019 E80000         E      161         CALL   SetCriticalError
+001C EB0490                162         JMP    FinishEnqueue
+                           163         
+001F                       164     AddEvent:                   ; enqueue the event
+001F E80000         E      165         CALL   Enqueue          ; enqueues the event
+                           166         ;JMP   FinishEnqueue
+                           167         
+0022                       168     FinishEnqueue:
+0022 C3                    169         RET
+                           170             
+                           171     EnqueueEvent     ENDP
+                           172     
+                           173     ; DequeueEvent
+                           174     ;
+                           175     ; Description:       This function dequeues the next event in the event queue
+                           176     ;                    if the event queue is not empty. If it is empty, the
+                           177     ;                    function does nothing.
+                           178     ;
+                           179     ; Operation:         The function first checks if the event queue is empty. If
+                           180     ;                    it is, the function returns without dequeuing any events.
+                           181     ;                    Otherwise, an event is dequeued and returned.
+                           182     ;
+                           183     ; Arguments:         None.
+                           184     ; Return Value:      eventValue (AL) - the event value
+                           185     ;                    eventType  (AH) - the event type
+                           186     ;
+                           187     ; Local Variables:   None.
+                           188     ; Shared Variables:  q - the event queue (DS, R/W)
+                           189     ; Global Variables:  None.
+                           190     ;
+                           191     ; Input:             None.
+                           192     ; Output:            None.
+                           193     ;
+                           194     ; Error Handling:    None.
+                           195     ;
+                           196     ; Algorithms:        None.
+                           197     ; Data Structures:   None.
+                           198     ;
+                           199     ; Registers Changed: Zero flags, SI
+                           200     ;
+                           201     ; Author:            Nancy Cao
+                           202     ; Revision History:
+                           203     ;     12/25/15  Nancy Cao   initial comments and pseudocode
+                           204     
+0023                       205     DequeueEvent     PROC        NEAR
+                           206                      PUBLIC      DequeueEvent
+                           207     
+0023                       208     EmptyQueue:                 ; check if the event queue is empty
+0023 BE000090       R      209         MOV    SI, OFFSET(q)    ; get the address of the event queue
+0027 E80000         E      210         CALL   QueueEmpty       ; check if the event queue is empty
+002A 7403                  211         JZ     FinishDequeue    ; if zero flag is set event queue is empty, so do
+                           212                                 ; nothing
+                           213         ;JNZ    RemoveEvent     ; otherwise go ahead and dequeue the next event
+                           214         
+002C                       215     RemoveEvent:                ; dequeue the next event
+8086/87/88/186 MACRO ASSEMBLER    EVENTQ                                                   20:25:03  01/07/;6  PAGE    5
+
+
+LOC  OBJ                  LINE     SOURCE
+
+002C E80000         E      216         CALL   Dequeue          ; dequeues the next event, event value/type stored
+                           217                                 ; in AX to return
+                           218         ;JMP   FinishDequeue
+                           219         
+002F                       220     FinishDequeue:
+002F C3                    221         RET
+                           222                      
+                           223     DequeueEvent     ENDP
+                           224     
+----                       225     CODE ENDS    
+                           226                
+                           227     ;the data segment
+                           228     
+----                       229     DATA    SEGMENT PUBLIC  'DATA'
+                           230     
+0000 ??                    231     q QUEUE <>                          ; the event queue that keeps track of event
+0001 ??
+0002 ????
+0004 ??
+0005 (256
+     ??
+     )
+                           232                                         ; value and type
+                           233     
+----                       234     DATA    ENDS
+                           235     
+                           236     END
+
+ASSEMBLY COMPLETE, NO ERRORS FOUND
